@@ -1,0 +1,13 @@
+[package]
+name = "codex_core"
+version = "1.0.0"
+edition = "2021"
+description = "Pixel Editor – Codex CLI(ChatGPT 로그인) 연동 핵심 로직 (Tauri 없이 테스트 가능)"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+base64 = "0.22"
+
+[dev-dependencies]
+serde_json = "1"

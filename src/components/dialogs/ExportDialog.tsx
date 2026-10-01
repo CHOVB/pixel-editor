@@ -8,14 +8,14 @@
  */
 import { useMemo, useState } from 'react';
 import type { SheetLayout } from '../../core/exporters';
-import { exportGif, exportPngFrame, exportSpriteSheet } from '../../editor/fileActions';
+import { exportAseprite, exportGif, exportPngFrame, exportSpriteSheet } from '../../editor/fileActions';
 import { useT } from '../../i18n';
 import { notify, selectedFrames } from '../../store/actions';
 import { getState, useEditor } from '../../store/editorStore';
 import { NumberField, Toggle } from '../ui';
 import { closeDialog, Modal } from './Modal';
 
-type ExportKind = 'png' | 'sheet' | 'gif';
+type ExportKind = 'png' | 'sheet' | 'gif' | 'aseprite';
 type RangeKind = 'all' | 'selection' | `tag:${string}`;
 
 export function ExportDialog() {
@@ -54,6 +54,7 @@ export function ExportDialog() {
     const rows = Math.ceil(n / cols);
     sizeText = `${cols * outW + (cols - 1) * padding} × ${rows * outH + (rows - 1) * padding}px`;
   }
+  if (kind === 'aseprite') sizeText = `${project.width} × ${project.height}px · ${project.frames.length}f · ${project.layers.length}L`;
 
   const run = async () => {
     if (busy) return;
@@ -61,6 +62,7 @@ export function ExportDialog() {
     try {
       if (kind === 'png') await exportPngFrame(getState().currentFrame, scale);
       else if (kind === 'sheet') await exportSpriteSheet({ layout, columns, padding, scale, frames }, withJson);
+      else if (kind === 'aseprite') await exportAseprite();
       else await exportGif({ frames, scale, loop, background: null });
       closeDialog();
     } catch (err) {
@@ -89,7 +91,7 @@ export function ExportDialog() {
       }
     >
       <div className="tabs" role="tablist">
-        {(['png', 'sheet', 'gif'] as const).map((k) => (
+        {(['png', 'sheet', 'gif', 'aseprite'] as const).map((k) => (
           <button key={k} type="button" role="tab" aria-selected={kind === k} className={kind === k ? 'active' : ''} onClick={() => setKind(k)}>
             {t(`dialog.export.${k}`)}
           </button>
@@ -97,19 +99,21 @@ export function ExportDialog() {
       </div>
       <p className="note">{t(`dialog.export.${kind}Desc`)}</p>
 
-      <div className="field">
-        <span className="field-label">{t('dialog.export.scale')}</span>
-        <div className="scale-row">
-          {[1, 2, 4, 8, 16].map((s) => (
-            <button key={s} type="button" className={`chip ${scale === s ? 'active' : ''}`} onClick={() => setScale(s)}>
-              {s}x
-            </button>
-          ))}
-          <NumberField value={scale} min={1} max={64} width={52} onChange={setScale} suffix="x" />
+      {kind !== 'aseprite' && (
+        <div className="field">
+          <span className="field-label">{t('dialog.export.scale')}</span>
+          <div className="scale-row">
+            {[1, 2, 4, 8, 16].map((s) => (
+              <button key={s} type="button" className={`chip ${scale === s ? 'active' : ''}`} onClick={() => setScale(s)}>
+                {s}x
+              </button>
+            ))}
+            <NumberField value={scale} min={1} max={64} width={52} onChange={setScale} suffix="x" />
+          </div>
         </div>
-      </div>
+      )}
 
-      {kind !== 'png' && (
+      {(kind === 'sheet' || kind === 'gif') && (
         <div className="field">
           <label htmlFor="export-range">{t('dialog.export.range')}</label>
           <select id="export-range" value={range} onChange={(e) => setRange(e.target.value as RangeKind)}>

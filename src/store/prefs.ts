@@ -30,6 +30,10 @@ export interface Prefs {
   autosaveSeconds?: number;
   /** 튜토리얼을 끝까지 봤는지 */
   tutorialDone?: boolean;
+  /** 튜토리얼에서 마지막으로 본 단계 */
+  tutorialStep?: number;
+  /** 시작할 때 환영 화면 보여주기 (기본 true) */
+  showWelcome?: boolean;
 }
 
 export function loadPrefs(): Prefs {
@@ -48,5 +52,17 @@ export function savePrefs(prefs: Prefs): void {
     localStorage.setItem(KEY, JSON.stringify({ ...loadPrefs(), ...prefs }));
   } catch {
     // 저장 실패는 무시합니다. (설정이 기억되지 않을 뿐 사용에는 문제 없음)
+  }
+}
+
+/** 모든 환경설정 지우기 (설정 화면의 "초기화") */
+export function resetPrefs(): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith('pixel-editor:')) localStorage.removeItem(key);
+    }
+  } catch {
+    // 무시
   }
 }

@@ -101,14 +101,26 @@ export interface GifOptions {
   background: Color | null;
 }
 
+/** 프로젝트에서 GIF 로 만들 프레임 그림(배율 적용)과 재생 시간을 준비합니다. */
+export function prepareGifFrames(p: Project, opts: GifOptions): { frames: Uint8ClampedArray[]; width: number; height: number; delays: number[] } {
+  return {
+    frames: opts.frames.map((fi) => upscaleInteger(compositeFrame(p, fi, { background: opts.background }), p.width, p.height, opts.scale)),
+    width: p.width * opts.scale,
+    height: p.height * opts.scale,
+    delays: opts.frames.map((fi) => p.frames[fi].duration),
+  };
+}
+
 /** 애니메이션 GIF 파일 바이트를 만듭니다. */
 export function encodeGif(p: Project, opts: GifOptions): Uint8Array {
-  const w = p.width * opts.scale;
-  const h = p.height * opts.scale;
-  const frames = opts.frames.map((fi) =>
-    upscaleInteger(compositeFrame(p, fi, { background: opts.background }), p.width, p.height, opts.scale),
-  );
+  const f = prepareGifFrames(p, opts);
+  return encodeGifFrames(f.frames, f.width, f.height, f.delays, opts.loop);
+}
 
+/**
+ * 이미 준비된 프레임 그림들로 GIF 만들기 (프로젝트가 필요 없어서 Web Worker 에서도 실행 가능)
+ */
+export function encodeGifFrames(frames: Uint8ClampedArray[], w: number, h: number, delays: number[], loop: boolean): Uint8Array {
   // 1) 모든 프레임에서 쓰인 색을 모읍니다. (반투명은 GIF에서 표현 불가 → 128 기준으로 자름)
   const colorIndex = new Map<number, number>();
   const palette: GifPalette = [[0, 0, 0]]; // 0번은 투명 전용
@@ -131,8 +143,8 @@ export function encodeGif(p: Project, opts: GifOptions): Uint8Array {
 
   const gif = GIFEncoder();
   frames.forEach((buf, n) => {
-    const delay = p.frames[opts.frames[n]].duration;
-    const repeat = opts.loop ? 0 : -1;
+    const delay = delays[n] ?? 100;
+    const repeat = loop ? 0 : -1;
     if (!tooMany) {
       // 2-a) 색이 256개 이하: 정확한 색 그대로 저장 (픽셀아트에 최적)
       const index = new Uint8Array(w * h);

@@ -31,11 +31,19 @@
 ```
 Project (프로젝트 = 파일 하나)
  ├─ width, height          그림 크기
- ├─ layers[]               레이어 목록 (0번이 맨 아래)
+ ├─ layers[]               레이어 목록 (0번이 맨 아래, 그룹 안은 parentId 로 연결)
+ │   └─ kind               pixel | group | reference(밑그림 이미지) | particles
+ │      guide              밑그림(스케치) 레이어 → 내보내기 제외
+ │      anim               키프레임 움직임 (위치/회전/크기/불투명도 + 이징)
+ │      effects[]          비파괴 효과 스택
+ │      bind               뼈대 연결 (rigid=통째로 / mesh=휘어지게)
+ │      particles          파티클 설정
  ├─ frames[]               프레임 목록 (각 프레임의 재생 시간 포함)
- ├─ cels{ }                실제 픽셀! key = "레이어id|프레임id"
+ ├─ cels{ }                실제 픽셀! key = "레이어id|프레임id"  (같은 버퍼를 공유하면 "링크 셀")
  ├─ tags[]                 애니메이션 구간 이름 (걷기 0~5 ...)
- └─ palette[]              팔레트 색 목록
+ ├─ palette[]              팔레트 색 목록
+ ├─ bones[]                뼈대 (부모, 기본 자세, 뼈 키프레임)
+ └─ assets{ }              밑그림 이미지 같은 외부 파일
 ```
 
 레이어 × 프레임 = **격자**입니다. 격자의 한 칸을 **셀(Cel)** 이라고 부릅니다.
@@ -91,7 +99,75 @@ Project (프로젝트 = 파일 하나)
 
 ---
 
-## 5. 다국어 (`i18n/`)
+## 5. 화면에 그려지는 순서 (렌더 파이프라인, `core/render.ts`)
+
+레이어 하나는 프레임마다 아래 순서로 처리된 뒤 합성됩니다. (결과는 캐시에 저장해서 다시 계산하지 않음)
+
+```
+① 원본 그림 (셀)      → 이 프레임에 그림이 없으면 앞 프레임 그림을 "계속 사용(hold)"
+                         hold 는 키프레임·뼈대·움직이는 효과(흔들림 등)가 있는 레이어만 (core/project.ts layerHolds)
+② 뼈대 연결            → core/skeleton.ts  (rigid: 행렬 하나 / mesh: 격자 + 가중치)
+③ 키프레임 움직임       → core/keyframes.ts + core/resample.ts (nearest 또는 RotSprite)
+④ 효과 스택            → core/effects.ts   (frameDependent 효과는 프레임마다 결과가 다름)
+⑤ 블렌드 모드로 합성     → core/blend.ts     (그룹은 자식들을 먼저 합성해서 한 장으로)
+```
+
+"굽기(bake)"는 이 결과를 실제 픽셀로 바꿔 셀에 넣는 것입니다. (`core/bake.ts`) Aseprite 로 내보낼 때도 같은 결과를 씁니다.
+
+---
+
+## 6. 애니메이션 도우미 알고리즘
+
+| 기능 | 파일 | 원리 (간단히) |
+| --- | --- | --- |
+| 자동 중간 프레임 | `core/inbetween.ts` | 같은 색 픽셀끼리 짝짓기 → 덩어리의 무게중심 이동으로 짝을 예측 → 이웃끼리 이동 방향 맞추기(중앙값) → 사이 위치에 찍고 빈틈 메우기 |
+| 가려진 부분 채우기 | `core/inpaint.ts` | 떼어낸 영역 중 "몸통이 좌우/위아래로 감싼 곳"만 고름 → 가장자리부터 한 겹씩 주변에서 가장 많은 색으로 채움 |
+| AI 도트 정리 | `core/pixelfix.ts` | 가장자리 변화량의 주기(DFT)로 도트 격자 크기 찾기 → 칸마다 가장 많은 색 → 비슷한 색 합치기 → 팔레트 맞추기 |
+| VFX 추천 | `core/vfx.ts` | 프레임마다 위치/변화량 측정 → 착지·타격·휘두르기·이동·꼭대기 규칙으로 점수 |
+| 파티클 | `core/particles.ts` | 씨앗값이 같으면 항상 같은 결과(결정적) → 반복 애니메이션이 매끄러움 |
+
+---
+
+## 7. AI(Codex) 연동 구조 – API 키를 쓰지 않습니다
+
+```
+[에디터 화면]  src/ai/codex.ts
+     │  웹 브라우저: HTTP (127.0.0.1 만)        데스크톱 앱: Tauri 명령(invoke)
+     ▼                                          ▼
+bridge/codex-bridge.mjs (Node)          src-tauri/crates/codex_core (Rust)
+     └──────────────┬───────────────────────────┘
+                    ▼
+     codex exec  (사용자가 `codex login` 으로 ChatGPT 계정에 로그인한 Codex CLI)
+       - 작업마다 임시 폴더, --sandbox workspace-write, 지시문은 표준 입력
+       - 로그인 안 됐으면 시작 전에 거절, 네트워크 끊김 감지, 시간 제한
+                    ▼
+     결과 PNG → src/ai/aiTasks.ts 가 도트 크기로 줄이고 프로젝트 팔레트에 맞춤
+```
+
+브리지는 내 컴퓨터(127.0.0.1)에서만 열리고, 허용된 에디터 주소(Origin)에서 온 요청만 받습니다.
+
+---
+
+## 8. 데스크톱 앱 / 웹 앱(PWA)
+
+- **데스크톱 (Tauri 2, `src-tauri/`)**: 같은 화면(dist/)을 창에 띄우고, 파일 대화상자와 Codex 실행만 Rust 명령으로 제공합니다.
+  화면 쪽은 `src/platform/desktop.ts` 가 "데스크톱이면 운영체제 대화상자, 아니면 브라우저 방식"으로 자동 선택합니다.
+  저장은 사용자가 대화상자에서 고른 파일에만 허용됩니다. (`desktop_write`)
+- **웹 (PWA)**: `public/manifest.webmanifest` + `public/sw.js`(서비스 워커) → 설치 · 오프라인 실행 · 파일 연결.
+
+---
+
+## 9. 상용 기능
+
+- **오류 대비**: `components/ErrorBoundary.tsx`(화면 오류 시 비상 저장 + 복구 화면), `editor/crashGuard.ts`(그 밖의 오류 기록 + 비상 저장)
+- **라이선스**: `licensing/license.ts` – ECDSA P-256 서명 키를 공개 키로 오프라인 확인 (기능 제한 없음, 정품 표시용)
+- **환경설정/단축키**: `components/dialogs/SettingsDialog.tsx`, `editor/shortcuts.ts`(사용자 단축키 저장 · 충돌 검사)
+- **최근 파일**: `editor/recentFiles.ts` (브라우저: 파일 핸들, 데스크톱: 경로)
+- **Web Worker**: `workers/exportWorker.ts` (GIF 압축을 화면과 분리)
+
+---
+
+## 10. 다국어 (`i18n/`)
 
 화면 글자는 코드에 직접 쓰지 않고 사전에서 꺼냅니다.
 
@@ -105,7 +181,7 @@ const t = useT();
 
 ---
 
-## 6. 연습 문제: 새 도구 추가해 보기 🏋️
+## 11. 연습 문제: 새 도구 추가해 보기 🏋️
 
 "클릭한 곳에 십자(+) 모양을 찍는 도구"를 만들어 봅시다.
 
@@ -138,12 +214,12 @@ const t = useT();
 
 ---
 
-## 7. 테스트 (`tests/`)
-
-`core` 의 함수들은 화면 없이 테스트합니다.
+## 12. 테스트
 
 ```bash
-npm test
+npm test            # tests/  : core 의 함수들을 화면 없이 테스트 (Vitest)
+npm run e2e         # e2e/    : 빌드한 앱을 크롬으로 열어 실제로 클릭해 보는 테스트 (Playwright)
+npm run rust:test   # src-tauri/crates/codex_core : 가짜 codex 로 연동 흐름 테스트 (Rust)
 ```
 
 예) `tests/drawing.test.ts` – 타원이 상자 안에 대칭으로 그려지는지, 채우기가 벽을 넘지 않는지 확인

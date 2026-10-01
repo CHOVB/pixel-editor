@@ -26,6 +26,7 @@ import {
 } from '../store/actions';
 import { gotoNeighborKey, linkCelsAction, openInbetweenDialog, toggleKeyframeAction } from '../store/animActions';
 import { getState, setState, type ToolId } from '../store/editorStore';
+import { loadPrefs, savePrefs } from '../store/prefs';
 import { moveTool, TOOL_LIST, TOOLS, type ToolInfo } from '../tools';
 import { copySelection, cutSelection } from './clipboard';
 import { confirmDiscard, openFile, saveProject } from './fileActions';
@@ -34,6 +35,8 @@ import { actualSize, fitToScreen, zoomStep } from './view';
 export type ShortcutGroup = 'file' | 'edit' | 'tools' | 'view' | 'animation' | 'helpers';
 
 export interface Shortcut {
+  /** 사용자 설정 저장용 이름 (아래에서 자동으로 붙임) */
+  id?: string;
   /** 화면에 표시할 키 조합, 예: 'Ctrl+Z' */
   label: string;
   code: string | string[];
@@ -98,6 +101,7 @@ export const SHORTCUTS: Shortcut[] = [
   { label: 'Ctrl+S', code: 'KeyS', ctrl: true, group: 'file', desc: 'menu.save', run: () => void saveProject(false) },
   { label: 'Ctrl+Shift+S', code: 'KeyS', ctrl: true, shift: true, group: 'file', desc: 'menu.saveAs', run: () => void saveProject(true) },
   { label: 'Ctrl+E', code: 'KeyE', ctrl: true, group: 'file', desc: 'menu.export', run: () => setState({ dialog: { id: 'export' } }) },
+  { label: 'Ctrl+,', code: 'Comma', ctrl: true, group: 'file', desc: 'menu.settings', run: () => setState({ dialog: { id: 'settings' } }) },
 
   // 편집
   { label: 'Ctrl+Z', code: 'KeyZ', ctrl: true, group: 'edit', desc: 'menu.undo', run: undo },
@@ -153,6 +157,138 @@ export const SHORTCUTS: Shortcut[] = [
   { label: 'Shift+R', code: 'KeyR', shift: true, group: 'helpers', desc: 'menu.replaceColor', run: () => setState({ dialog: { id: 'replaceColor' } }) },
   { label: 'Shift+B', code: 'KeyB', shift: true, group: 'helpers', desc: 'bones.show', run: () => setState((s) => ({ showBones: !s.showBones })) },
 ];
+
+/* ------------------------------------------------------------------ */
+/* 단축키 바꾸기 (설정 화면)                                               */
+/* ------------------------------------------------------------------ */
+
+export interface KeyBinding {
+  code: string;
+  ctrl: boolean;
+  shift: boolean;
+  alt: boolean;
+}
+
+const CODE_LABELS: Record<string, string> = {
+  Comma: ',',
+  Period: '.',
+  Slash: '/',
+  Backslash: '\\',
+  Semicolon: ';',
+  Quote: "'",
+  Backquote: '`',
+  BracketLeft: '[',
+  BracketRight: ']',
+  Equal: '=',
+  Minus: '-',
+  Escape: 'Esc',
+  Space: 'Space',
+  NumpadAdd: 'Num +',
+  NumpadSubtract: 'Num -',
+  NumpadEnter: 'Enter',
+};
+
+/** 'KeyK' → 'K', 'Digit1' → '1' 처럼 사람이 읽기 쉬운 이름 */
+export function codeLabel(code: string): string {
+  if (CODE_LABELS[code]) return CODE_LABELS[code];
+  if (code.startsWith('Key')) return code.slice(3);
+  if (code.startsWith('Digit')) return code.slice(5);
+  if (code.startsWith('Numpad')) return `Num ${code.slice(6)}`;
+  return code;
+}
+
+export function bindingLabel(b: KeyBinding): string {
+  return [b.ctrl ? 'Ctrl' : '', b.alt ? 'Alt' : '', b.shift ? 'Shift' : '', codeLabel(b.code)].filter(Boolean).join('+');
+}
+
+function bindingToString(b: KeyBinding): string {
+  return [b.ctrl ? 'ctrl' : '', b.alt ? 'alt' : '', b.shift ? 'shift' : '', b.code].filter(Boolean).join('+');
+}
+
+function bindingFromString(text: string): KeyBinding | null {
+  const parts = text.split('+').filter(Boolean);
+  const code = parts.pop();
+  if (!code) return null;
+  return { code, ctrl: parts.includes('ctrl'), shift: parts.includes('shift'), alt: parts.includes('alt') };
+}
+
+/** 키보드 입력 → 키 조합 (Ctrl/Shift/Alt 만 누른 경우와 방향키·Esc 는 쓸 수 없음) */
+export function bindingFromEvent(e: KeyboardEvent): KeyBinding | null {
+  if (['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight', 'CapsLock'].includes(e.code)) return null;
+  if (e.code.startsWith('Arrow') || e.code === 'Escape' || !e.code) return null;
+  return { code: e.code, ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey, alt: e.altKey };
+}
+
+const defaults = new Map<string, KeyBinding & { label: string }>();
+
+// 각 단축키에 저장용 이름을 붙이고, 처음 값을 "기본값"으로 기억해 둡니다.
+{
+  const seen = new Map<string, number>();
+  for (const sc of SHORTCUTS) {
+    const n = seen.get(sc.desc) ?? 0;
+    seen.set(sc.desc, n + 1);
+    sc.id = n ? `${sc.desc}#${n}` : sc.desc;
+    if (!sc.displayOnly && typeof sc.code === 'string' && sc.code) {
+      defaults.set(sc.id, { code: sc.code, ctrl: !!sc.ctrl, shift: !!sc.shift, alt: !!sc.alt, label: sc.label });
+    }
+  }
+}
+
+/** 바꿀 수 있는 단축키 목록 (도움말 전용 항목, 여러 키를 쓰는 항목 제외) */
+export function customizableShortcuts(): Shortcut[] {
+  return SHORTCUTS.filter((sc) => sc.id && defaults.has(sc.id));
+}
+
+export function isCustomized(sc: Shortcut): boolean {
+  const d = sc.id ? defaults.get(sc.id) : undefined;
+  return !!d && (d.code !== sc.code || d.ctrl !== !!sc.ctrl || d.shift !== !!sc.shift || d.alt !== !!sc.alt);
+}
+
+/** 같은 키 조합을 쓰는 다른 단축키 */
+export function findConflict(id: string, b: KeyBinding): Shortcut | undefined {
+  return SHORTCUTS.find((sc) => {
+    if (sc.id === id || sc.displayOnly) return false;
+    const codes = Array.isArray(sc.code) ? sc.code : [sc.code];
+    return codes.includes(b.code) && !!sc.ctrl === b.ctrl && !!sc.shift === b.shift && !!sc.alt === b.alt;
+  });
+}
+
+/** 저장된 사용자 설정을 단축키 목록에 반영 */
+export function applyShortcutOverrides(overrides: Record<string, string>): void {
+  for (const sc of SHORTCUTS) {
+    const d = sc.id ? defaults.get(sc.id) : undefined;
+    if (!d) continue;
+    const custom = sc.id ? bindingFromString(overrides[sc.id] ?? '') : null;
+    const b = custom ?? d;
+    sc.code = b.code;
+    sc.ctrl = b.ctrl;
+    sc.shift = b.shift;
+    sc.alt = b.alt;
+    sc.label = custom ? bindingLabel(custom) : d.label;
+  }
+  setState((s) => ({ shortcutsVersion: s.shortcutsVersion + 1 }));
+}
+
+/** 단축키 하나 바꾸기 (binding=null 이면 기본값으로) */
+export function setShortcutBinding(id: string, binding: KeyBinding | null): void {
+  const overrides = { ...(loadPrefs().shortcuts ?? {}) };
+  if (binding) overrides[id] = bindingToString(binding);
+  else delete overrides[id];
+  savePrefs({ shortcuts: overrides });
+  applyShortcutOverrides(overrides);
+}
+
+export function resetAllShortcuts(): void {
+  savePrefs({ shortcuts: {} });
+  applyShortcutOverrides({});
+}
+
+/** 메뉴/툴팁에 보여줄 현재 단축키 글자 (desc 가 같은 첫 번째 단축키) */
+export function shortcutLabel(desc: TKey, fallback = ''): string {
+  return SHORTCUTS.find((sc) => sc.desc === desc && !sc.displayOnly)?.label ?? fallback;
+}
+
+applyShortcutOverrides(loadPrefs().shortcuts ?? {});
 
 function matches(sc: Shortcut, e: KeyboardEvent): boolean {
   if (sc.displayOnly || !sc.code) return false;

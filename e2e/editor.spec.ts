@@ -1,0 +1,143 @@
+/**
+ * 주요 기능 브라우저 점검 (실제 화면을 마우스/키보드로 조작)
+ */
+import { expect, test, type Page } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+const SPRITE = fileURLToPath(new URL('./fixtures/ai-sprite.png', import.meta.url));
+
+test.beforeEach(async ({ context }) => {
+  // 자동 점검에서는 운영체제 저장 창 대신 "다운로드" 방식으로 저장되게 합니다.
+  await context.addInitScript(() => {
+    const w = window as unknown as Record<string, unknown>;
+    w.showSaveFilePicker = undefined;
+    w.showOpenFilePicker = undefined;
+  });
+});
+
+async function menu(page: Page, title: string, item: string): Promise<void> {
+  await page.locator('.menu-title', { hasText: new RegExp(`^${title}$`) }).click();
+  await page.locator('.menu-dropdown .menu-item', { hasText: item }).first().click();
+}
+
+/** 캔버스의 픽셀 좌표 → 화면 좌표 */
+async function canvasMapper(page: Page) {
+  const box = (await page.locator('.main-canvas').boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  const status = (await page.locator('.statusbar').textContent())!.replace(/\s+/g, ' ');
+  const zoom = Number(status.match(/🔍 (\d+)%/)![1]) / 100;
+  const [, cx, cy] = status.match(/📍 (\d+), (\d+)/)!.map(Number);
+  return (x: number, y: number) => [box.x + box.width / 2 + (x - cx) * zoom, box.y + box.height / 2 + (y - cy) * zoom] as const;
+}
+
+async function frameCount(page: Page): Promise<number> {
+  return page.locator('.tl-frame-head').count();
+}
+
+test('opens a sample from the welcome screen and plays it', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.sample-card', { hasText: '통통 슬라임' }).click();
+  await expect(page.locator('.modal')).toHaveCount(0);
+  expect(await frameCount(page)).toBe(8);
+  await expect(page.locator('.tl-layer', { hasText: '슬라임' })).toBeVisible();
+});
+
+test('draws two poses and generates in-betweens', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.preset-grid.big .preset').nth(1).click(); // 32×32
+  const P = await canvasMapper(page);
+  await page.keyboard.press('u');
+  const [ax, ay] = P(6, 10);
+  const [bx, by] = P(13, 22);
+  await page.mouse.move(ax, ay);
+  await page.mouse.down();
+  await page.mouse.move(bx, by, { steps: 5 });
+  await page.mouse.up();
+  await page.keyboard.press('Shift+D');
+  await page.keyboard.press('Control+a');
+  await page.keyboard.press('v');
+  const [mx, my] = P(9, 15);
+  const [nx, ny] = P(20, 15);
+  await page.mouse.move(mx, my);
+  await page.mouse.down();
+  await page.mouse.move(nx, ny, { steps: 5 });
+  await page.mouse.up();
+  await page.keyboard.press('Escape');
+  expect(await frameCount(page)).toBe(2);
+  await page.keyboard.press('Shift+I');
+  await expect(page.locator('.modal h2')).toHaveText('자동 중간 프레임 만들기');
+  await page.locator('.modal .btn.primary').click();
+  await expect.poll(() => frameCount(page)).toBe(8);
+});
+
+test('cleans up an AI-made pixel image to true pixel size', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.welcome .btn.ghost.continue').click();
+  await menu(page, '파일', 'AI 도트 이미지 정리');
+  const chooser = page.waitForEvent('filechooser');
+  await page.locator('.modal .btn.small', { hasText: '이미지 열기' }).first().click();
+  await (await chooser).setFiles(SPRITE);
+  await expect(page.locator('.modal .foot-info')).toContainText('12×12');
+  await page.locator('.modal .btn.primary').click();
+  await expect(page.locator('.statusbar')).toContainText('12 × 12');
+});
+
+test('custom shortcut works and can be reset', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.welcome .btn.ghost.continue').click();
+  await page.keyboard.press('Control+,');
+  await page.locator('.settings-dialog .tabs button', { hasText: '단축키' }).click();
+  const row = page.locator('.shortcut-edit-row', { hasText: '새 프레임' }).first();
+  await row.locator('button', { hasText: '바꾸기' }).click();
+  await page.keyboard.press('Shift+F');
+  await expect(row.locator('kbd')).toHaveText('Shift+F');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.modal')).toHaveCount(0);
+  await page.keyboard.press('Shift+F');
+  expect(await frameCount(page)).toBe(2);
+  // 기본값으로 되돌리기
+  await page.keyboard.press('Control+,');
+  await page.locator('.settings-dialog .tabs button', { hasText: '단축키' }).click();
+  await page.locator('.settings-dialog .btn', { hasText: '모두 기본값' }).click();
+  await expect(page.locator('.shortcut-edit-row', { hasText: '새 프레임' }).first().locator('kbd')).toHaveText('N');
+});
+
+test('exports and re-imports an Aseprite file', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.sample-card', { hasText: '바람 부는 나무' }).click();
+  await page.keyboard.press('Control+e');
+  await page.locator('.modal .tabs button', { hasText: 'Aseprite' }).click();
+  const download = page.waitForEvent('download');
+  await page.locator('.modal .btn.primary').click();
+  const file = await (await download).path();
+  const bytes = readFileSync(file);
+  expect(bytes.readUInt16LE(4)).toBe(0xa5e0);
+  expect(bytes.readUInt16LE(6)).toBe(8); // 프레임 수
+
+  const chooser = page.waitForEvent('filechooser');
+  await page.keyboard.press('Control+o');
+  await (await chooser).setFiles({ name: 'tree.aseprite', mimeType: 'application/octet-stream', buffer: bytes });
+  await expect(page.locator('.tl-layer', { hasText: '나뭇잎' })).toBeVisible();
+  expect(await frameCount(page)).toBe(8);
+});
+
+test('Codex window explains how to connect when the bridge is off', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.welcome .btn.ghost.continue').click();
+  await page.locator('.ai-btn').click();
+  await expect(page.locator('.modal')).toContainText('npm run codex-bridge');
+  await expect(page.locator('.modal')).toContainText('API 키 없이');
+});
+
+test('tutorial panel walks through the steps', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.tutorial-btn').click();
+  const panel = page.locator('.tutorial-panel');
+  await expect(panel).toContainText('1 / 9');
+  await panel.locator('.btn', { hasText: '다음' }).click();
+  await panel.locator('.btn', { hasText: '연필 고르기' }).click();
+  await expect(page.locator('.tool-options')).toContainText('연필');
+  await panel.locator('[aria-label="튜토리얼 닫기 (도움말 메뉴에서 다시 열 수 있어요)"]').click();
+  await expect(panel).toHaveCount(0);
+});

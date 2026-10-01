@@ -2,7 +2,8 @@
  * 파일 관련 동작: 새로 만들기 / 열기 / 저장 / 가져오기 / 내보내기 / 자동 저장
  * ------------------------------------------------------------
  */
-import { buildSpriteSheet, buildSpriteSheetJson, encodeGif, type GifOptions, type SpriteSheetOptions } from '../core/exporters';
+import { readAseprite, writeAseprite } from '../core/aseprite';
+import { buildSpriteSheet, buildSpriteSheetJson, encodeGif, prepareGifFrames, type GifOptions, type SpriteSheetOptions } from '../core/exporters';
 import { deserializeProject, PROJECT_EXTENSION, serializeProject } from '../core/fileFormat';
 import { parsePaletteFile, toGplFile, toHexFile } from '../core/palettes';
 import { blitBuffer, createBuffer, upscaleInteger } from '../core/pixels';
@@ -11,20 +12,24 @@ import { compositeFrame } from '../core/render';
 import type { Color } from '../core/types';
 import { tr } from '../i18n';
 import { bufferToPngBlob, decodeImageFile } from '../platform/canvas';
+import { desktopHandle } from '../platform/desktop';
 import { openFileDialog, saveBlob, type FileTypeOption, type WritableHandle } from '../platform/fileio';
 import { kvDelete, kvGet, kvSet } from '../platform/storage';
 import { commitStructure, notify, replaceProject, setPaletteColors } from '../store/actions';
 import { getState, setState } from '../store/editorStore';
+import { encodeGifInBackground } from './exportWorkerClient';
 import { openGifAsProject } from './importActions';
+import { addRecentFile, readRecentFile, removeRecentFile, type RecentFile } from './recentFiles';
 
 const PROJECT_TYPES: FileTypeOption[] = [
   { description: 'Pixel Editor Project', accept: { 'application/json': [PROJECT_EXTENSION] } },
 ];
 const OPEN_TYPES: FileTypeOption[] = [
   {
-    description: 'Pixel Editor Project / Image',
+    description: 'Pixel Editor Project / Aseprite / Image',
     accept: {
       'application/json': [PROJECT_EXTENSION],
+      'application/octet-stream': ['.aseprite', '.ase'],
       'image/png': ['.png'],
       'image/jpeg': ['.jpg', '.jpeg'],
       'image/gif': ['.gif'],
@@ -47,6 +52,7 @@ const IMAGE_TYPES: FileTypeOption[] = [
 ];
 const PNG_TYPES: FileTypeOption[] = [{ description: 'PNG Image', accept: { 'image/png': ['.png'] } }];
 const GIF_TYPES: FileTypeOption[] = [{ description: 'GIF Animation', accept: { 'image/gif': ['.gif'] } }];
+const ASE_TYPES: FileTypeOption[] = [{ description: 'Aseprite', accept: { 'application/octet-stream': ['.aseprite'] } }];
 const JSON_TYPES: FileTypeOption[] = [{ description: 'JSON', accept: { 'application/json': ['.json'] } }];
 
 /** 지금 열려 있는 파일의 핸들 (Ctrl+S 덮어쓰기용) */
@@ -58,6 +64,51 @@ function baseName(fileName: string): string {
 
 function safeName(): string {
   return (getState().project.name || 'untitled').replace(/[\\/:*?"<>|]/g, '_');
+}
+
+/** 최근 파일 목록용 작은 미리보기 (최대 64px) */
+async function projectThumb(): Promise<string | undefined> {
+  try {
+    const p = getState().project;
+    const scale = Math.max(1, Math.floor(64 / Math.max(p.width, p.height)));
+    const big = upscaleInteger(compositeFrame(p, 0), p.width, p.height, scale);
+    const blob = await bufferToPngBlob(big, p.width * scale, p.height * scale);
+    if (blob.size > 60_000) return undefined;
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+/** 지금 프로젝트를 최근 파일 목록에 올립니다. */
+async function rememberRecent(name: string, handle: WritableHandle | null): Promise<void> {
+  const p = getState().project;
+  await addRecentFile({
+    name,
+    width: p.width,
+    height: p.height,
+    frames: p.frames.length,
+    thumb: await projectThumb(),
+    handle: (handle ?? undefined) as unknown as FileSystemFileHandle | undefined,
+  });
+}
+
+/** 최근 파일 다시 열기 (파일을 찾을 수 없으면 열기 창을 띄웁니다) */
+export async function openRecent(entry: RecentFile): Promise<void> {
+  const file = await readRecentFile(entry);
+  if (file) {
+    const handle = entry.path ? desktopHandle(entry.path, entry.name) : (entry.handle as unknown as WritableHandle | undefined);
+    await openFileObject(file, handle ?? null);
+    return;
+  }
+  notify(tr('toast.recentMissing', { name: entry.name }), 'info');
+  if (entry.handle || entry.path) await removeRecentFile(entry.key);
+  await openFile();
 }
 
 /* ------------------------------------------------------------------ */
@@ -95,7 +146,7 @@ export function newProject(width: number, height: number, background: Color | nu
 }
 
 export async function openFile(): Promise<void> {
-  const result = await openFileDialog([PROJECT_EXTENSION, '.json', 'image/*'], OPEN_TYPES);
+  const result = await openFileDialog([PROJECT_EXTENSION, '.json', '.aseprite', '.ase', 'image/*'], OPEN_TYPES);
   if (!result) return;
   await openFileObject(result.file, result.handle);
 }
@@ -113,6 +164,15 @@ export async function openFileObject(file: File, handle: WritableHandle | null =
       const project = await deserializeProject(await file.text());
       currentHandle = handle;
       replaceProject(project, file.name);
+      notify(tr('toast.opened', { name: file.name }), 'success');
+      void rememberRecent(file.name, handle);
+      return;
+    }
+    // Aseprite 파일: 레이어/프레임/태그를 그대로 가져옵니다. (저장은 .pxe 로 새로 저장)
+    if (lower.endsWith('.aseprite') || lower.endsWith('.ase')) {
+      const project = await readAseprite(await file.arrayBuffer(), file.name);
+      currentHandle = null;
+      replaceProject(project, null);
       notify(tr('toast.opened', { name: file.name }), 'success');
       return;
     }
@@ -156,6 +216,7 @@ export async function saveProject(saveAs = false): Promise<void> {
     currentHandle = result.handle;
     setState({ fileName: result.name, dirty: false });
     notify(tr('toast.saved', { name: result.name }), 'success');
+    void rememberRecent(result.name, result.handle);
   } catch (err) {
     console.error(err);
     notify(tr('toast.saveFailed'), 'error');
@@ -222,9 +283,24 @@ export async function exportSpriteSheet(opts: SpriteSheetOptions, withJson: bool
 
 export async function exportGif(opts: GifOptions): Promise<void> {
   const p = getState().project;
-  const bytes = encodeGif(p, opts);
+  let bytes: Uint8Array;
+  try {
+    // 무거운 압축은 Web Worker 에서 (화면이 멈추지 않게)
+    const prepared = prepareGifFrames(p, opts);
+    bytes = await encodeGifInBackground({ ...prepared, loop: opts.loop });
+  } catch {
+    bytes = encodeGif(p, opts);
+  }
   const blob = new Blob([bytes as BlobPart], { type: 'image/gif' });
   const result = await saveBlob(blob, `${safeName()}.gif`, GIF_TYPES);
+  if (result) notify(tr('toast.exported', { name: result.name }), 'success');
+}
+
+/** Aseprite(.aseprite) 로 내보내기 – 움직임/효과는 보이는 그대로 픽셀로 저장됩니다. */
+export async function exportAseprite(): Promise<void> {
+  const p = getState().project;
+  const bytes = await writeAseprite(p);
+  const result = await saveBlob(new Blob([bytes as BlobPart], { type: 'application/octet-stream' }), `${safeName()}.aseprite`, ASE_TYPES);
   if (result) notify(tr('toast.exported', { name: result.name }), 'success');
 }
 
@@ -260,7 +336,8 @@ export async function exportPaletteFile(format: 'hex' | 'gpl'): Promise<void> {
 /* ------------------------------------------------------------------ */
 
 const AUTOSAVE_KEY = 'autosave';
-const AUTOSAVE_INTERVAL = 15000;
+/** 기본 자동 저장 간격 (초). 설정 화면에서 바꿀 수 있습니다. 0 = 끔 */
+export const DEFAULT_AUTOSAVE_SECONDS = 15;
 
 export interface AutosaveRecord {
   text: string;
@@ -273,16 +350,21 @@ export interface AutosaveRecord {
 let lastAutosaveVersion = -1;
 let autosaveTimer: ReturnType<typeof setInterval> | null = null;
 
-export function startAutosave(): void {
-  if (autosaveTimer) return;
+/** 자동 저장 시작 (seconds 를 주면 그 간격으로 다시 시작, 0 이면 끔) */
+export function startAutosave(seconds = DEFAULT_AUTOSAVE_SECONDS): void {
+  if (autosaveTimer) clearInterval(autosaveTimer);
+  autosaveTimer = null;
+  if (seconds <= 0) return;
   autosaveTimer = setInterval(() => {
     void autosaveNow();
-  }, AUTOSAVE_INTERVAL);
+  }, seconds * 1000);
 }
 
-export async function autosaveNow(): Promise<void> {
+/** force=true 면 변경 확인 없이 바로 저장합니다. (오류가 났을 때 비상 저장용) */
+export async function autosaveNow(force = false): Promise<void> {
   const s = getState();
-  if (!s.dirty || s.docVersion === lastAutosaveVersion) return;
+  if (!force && (!s.dirty || s.docVersion === lastAutosaveVersion)) return;
+  if (force && !s.dirty) return;
   try {
     const text = await serializeProject(s.project);
     const record: AutosaveRecord = {
@@ -296,6 +378,7 @@ export async function autosaveNow(): Promise<void> {
     lastAutosaveVersion = s.docVersion;
   } catch (err) {
     console.warn('자동 저장 실패', err);
+    if (force) throw err;
   }
 }
 

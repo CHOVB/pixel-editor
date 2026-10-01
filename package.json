@@ -1,7 +1,7 @@
 {
   "name": "pixel-editor",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "초보자도 바로 쓸 수 있는 픽셀아트 & 애니메이션 에디터",
   "type": "module",
   "scripts": {
@@ -11,7 +11,12 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "codex-bridge": "node bridge/codex-bridge.mjs"
+    "codex-bridge": "node bridge/codex-bridge.mjs",
+    "e2e": "playwright test",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build",
+    "rust:test": "cd src-tauri/crates/codex_core && cargo test",
+    "license": "node scripts/license-tool.mjs"
   },
   "dependencies": {
     "gifenc": "^1.0.3",
@@ -21,6 +26,8 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@tauri-apps/cli": "^2.12.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",

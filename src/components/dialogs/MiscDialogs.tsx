@@ -8,7 +8,8 @@
  *  - TagDialog: 애니메이션 태그 만들기/수정
  *  - ConfirmDialog: "정말 할까요?" 확인
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { currentLicense, type LicenseInfo } from '../../licensing/license';
 import { SHORTCUTS, type ShortcutGroup } from '../../editor/shortcuts';
 import { tr, useT } from '../../i18n';
 import {
@@ -19,7 +20,7 @@ import {
   setFrameDurations,
   updateTagAction,
 } from '../../store/actions';
-import { getState, useEditor } from '../../store/editorStore';
+import { getState, setState, useEditor } from '../../store/editorStore';
 import { TAG_COLORS } from '../../core/project';
 import { NumberField } from '../ui';
 import { closeDialog, Modal } from './Modal';
@@ -60,13 +61,25 @@ export function ShortcutsDialog() {
 
 export function AboutDialog() {
   const t = useT();
+  const [license, setLicense] = useState<LicenseInfo | null | undefined>(undefined);
+  useEffect(() => {
+    void currentLicense().then(setLicense);
+  }, []);
   return (
     <Modal title={t('dialog.about.title')} width={420}>
       <div className="about">
         <div className="about-logo" />
         <h3>Pixel Editor</h3>
-        <p>v0.1.0</p>
+        <p>v{__APP_VERSION__}</p>
         <p>{t('dialog.about.body')}</p>
+        {license !== undefined && (
+          <p className={license ? 'success-box' : 'note'}>
+            {license ? t('license.licensedTo', { name: license.name, plan: t(`license.plan.${license.plan}`) }) : t('license.unregistered')}
+          </p>
+        )}
+        <button type="button" className="link-btn" onClick={() => setState({ dialog: { id: 'license' } })}>
+          🔑 {t('license.title')}
+        </button>
         <p className="note">{t('dialog.about.credits')}</p>
       </div>
     </Modal>

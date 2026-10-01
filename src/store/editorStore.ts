@@ -63,9 +63,7 @@ export type DialogId =
   | 'vfx'
   | 'cleanup'
   | 'settings'
-  | 'tutorial'
-  | 'license'
-  | 'crash';
+  | 'license';
 
 export interface DialogState {
   id: DialogId;
@@ -182,6 +180,12 @@ export interface EditorState {
   paletteIndex: number;
   /** 오른쪽 패널 구역 접힘 상태 (예: { color: true }) */
   collapsed: Record<string, boolean>;
+  /** 단축키를 바꾸면 1씩 증가 (메뉴의 단축키 글자 갱신용) */
+  shortcutsVersion: number;
+  /** 따라 하기 튜토리얼에서 보고 있는 단계 (null = 닫힘) */
+  tutorialStep: number | null;
+  /** 튜토리얼을 다시 열 때 이어서 볼 단계 */
+  lastTutorialStep: number;
 }
 
 const COLLAPSE_KEY = 'pixel-editor:collapsed:v2';
@@ -266,13 +270,16 @@ export const useEditor = create<EditorState>(() => ({
   language: initialLanguage,
   theme: prefs.theme ?? 'dark',
   uiScale: prefs.uiScale ?? 1,
-  dialog: { id: 'welcome' },
+  dialog: prefs.showWelcome === false ? null : { id: 'welcome' },
   toast: null,
   contextMenu: null,
   cursor: null,
   paletteId: prefs.paletteId ?? DEFAULT_PALETTE_ID,
   paletteIndex: -1,
   collapsed: loadCollapsed(),
+  shortcutsVersion: 0,
+  tutorialStep: null,
+  lastTutorialStep: prefs.tutorialStep ?? 0,
 }));
 
 /** 상태를 바로 읽을 때 쓰는 짧은 별칭 (컴포넌트 밖에서 사용) */

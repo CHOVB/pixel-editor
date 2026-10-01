@@ -1,0 +1,22 @@
+[package]
+name = "pixel-editor"
+version = "1.0.0"
+description = "Pixel Editor – 픽셀아트 & 도트 애니메이션 에디터 (데스크톱)"
+edition = "2021"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+base64 = "0.22"
+codex_core = { path = "crates/codex_core" }
+
+[profile.release]
+# 배포용: 작고 빠르게
+lto = true
+codegen-units = 1
+strip = true

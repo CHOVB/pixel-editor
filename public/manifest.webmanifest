@@ -1,0 +1,27 @@
+{
+  "name": "Pixel Editor – 픽셀아트 & 애니메이션",
+  "short_name": "Pixel Editor",
+  "description": "초보자도 바로 쓰는 픽셀아트 · 도트 애니메이션 에디터",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#15161b",
+  "theme_color": "#1f2027",
+  "lang": "ko",
+  "categories": ["graphics", "design", "productivity"],
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "file_handlers": [
+    {
+      "action": "./",
+      "accept": {
+        "application/json": [".pxe"],
+        "application/octet-stream": [".aseprite", ".ase"]
+      }
+    }
+  ]
+}

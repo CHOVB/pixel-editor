@@ -1,0 +1,41 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Pixel Editor",
+  "version": "1.0.0",
+  "identifier": "com.pixeleditor.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Pixel Editor",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 640,
+        "center": true,
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "GraphicsAndDesign",
+    "shortDescription": "Pixel art & animation editor",
+    "longDescription": "초보자도 바로 쓰는 픽셀아트 · 도트 애니메이션 에디터. 자동 중간 프레임, 뼈대 애니메이션, 효과, VFX, Codex(ChatGPT 로그인) 연동.",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "fileAssociations": [
+      { "ext": ["pxe"], "name": "Pixel Editor Project", "role": "Editor", "mimeType": "application/json" },
+      { "ext": ["aseprite", "ase"], "name": "Aseprite", "role": "Editor" }
+    ]
+  }
+}

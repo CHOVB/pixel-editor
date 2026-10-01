@@ -9,6 +9,7 @@
  * 픽셀 버퍼를 바꿔야 하는 구조 변경은 항상 "새 버퍼"를 만듭니다. (기존 버퍼는 실행 취소용으로 보존)
  */
 import { celKey } from './celKey';
+import { effectDef } from './effects';
 import {
   cloneBuffer,
   createBuffer,
@@ -142,16 +143,25 @@ export function celHasContent(p: Project, layerId: string, frameId: string): boo
 }
 
 /**
+ * 레이어가 빈 프레임에서 앞 그림을 계속 쓰는지(hold):
+ * 키프레임 움직임, 뼈대 연결, 또는 프레임마다 달라지는 효과(흔들림·숨쉬기 등)가 있으면 그렇습니다.
+ */
+export function layerHolds(layer: Layer): boolean {
+  if (layer.anim && layer.anim.keys.length > 0) return true;
+  if (layer.bind) return true;
+  return layer.effects.some((e) => e.enabled && !!effectDef(e.type)?.frameDependent);
+}
+
+/**
  * 이 프레임에서 실제로 사용되는 셀의 프레임 id.
- * 움직임(키프레임)이 있는 레이어는 빈 프레임에서 "앞 프레임의 그림을 계속 사용(hold)" 합니다.
- * → 그림 한 장을 그려 두고 키프레임만 찍으면 모든 프레임에 나타납니다.
+ * 움직이는 레이어(layerHolds)는 빈 프레임에서 "앞 프레임의 그림을 계속 사용(hold)" 합니다.
+ * → 그림 한 장을 그려 두고 키프레임이나 흔들림 효과만 넣으면 모든 프레임에 나타납니다.
  */
 export function sourceFrameId(p: Project, layer: Layer, frameIndex: number): string | null {
   const frame = p.frames[frameIndex];
   if (!frame) return null;
   if (p.cels[celKey(layer.id, frame.id)]) return frame.id;
-  const holds = (layer.anim && layer.anim.keys.length > 0) || !!layer.bind;
-  if (!holds) return null;
+  if (!layerHolds(layer)) return null;
   for (let i = frameIndex - 1; i >= 0; i--) {
     if (p.cels[celKey(layer.id, p.frames[i].id)]) return p.frames[i].id;
   }

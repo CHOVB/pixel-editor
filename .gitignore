@@ -4,3 +4,11 @@ dist
 .DS_Store
 .vite
 coverage
+license-private*.json
+*.pem
+src-tauri/target
+src-tauri/gen
+test-results
+playwright-report
+src-tauri/crates/*/Cargo.lock
+src-tauri/crates/*/target

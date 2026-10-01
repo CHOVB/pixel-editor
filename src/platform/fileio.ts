@@ -4,7 +4,9 @@
  * 크롬/엣지처럼 "파일 시스템 접근 API"를 지원하는 브라우저에서는
  * 진짜 프로그램처럼 같은 파일에 덮어쓰기 저장(Ctrl+S)이 가능합니다.
  * 지원하지 않는 브라우저(파이어폭스, 사파리)에서는 다운로드 방식으로 저장합니다.
+ * 데스크톱 앱(Tauri)에서는 운영체제의 파일 대화상자를 씁니다. (platform/desktop.ts)
  */
+import { desktopOpen, desktopSave, isDesktop } from './desktop';
 
 export interface FileTypeOption {
   description: string;
@@ -69,6 +71,11 @@ export async function saveBlob(
   handle: WritableHandle | null = null,
 ): Promise<SaveResult | null> {
   try {
+    // 데스크톱 앱: 처음 저장이면 운영체제 저장 창 (고르는 즉시 저장됨)
+    if (!handle && isDesktop()) {
+      const saved = await desktopSave(blob, suggestedName, types);
+      return saved ? { name: saved.name, handle: saved } : null;
+    }
     let target = handle;
     if (!target && fsWindow.showSaveFilePicker) {
       target = await fsWindow.showSaveFilePicker({ suggestedName, types });
@@ -95,6 +102,13 @@ export interface OpenResult {
 
 /** 파일 열기 대화상자. accept 예: ['.pxe', '.png', 'image/*'] */
 export async function openFileDialog(accept: string[], types?: FileTypeOption[]): Promise<OpenResult | null> {
+  if (isDesktop()) {
+    try {
+      return await desktopOpen(accept, types);
+    } catch (err) {
+      console.warn('데스크톱 열기 창 실패, 기본 방식으로 대체합니다.', err);
+    }
+  }
   if (fsWindow.showOpenFilePicker && types) {
     try {
       const [handle] = await fsWindow.showOpenFilePicker({ multiple: false, types });

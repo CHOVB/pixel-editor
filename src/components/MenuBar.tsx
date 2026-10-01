@@ -7,8 +7,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { createParticleSettings, PARTICLE_PRESET_IDS } from '../core/particles';
 import { copySelection, cutSelection, pasteFromMenu } from '../editor/clipboard';
-import { confirmDiscard, importImageAsLayer, openFile, saveProject } from '../editor/fileActions';
+import { confirmDiscard, importImageAsLayer, openFile, openRecent, saveProject } from '../editor/fileActions';
+import { useRecent } from '../editor/recentFiles';
+import { openSample, SAMPLE_IDS } from '../editor/samples';
 import { importReferenceImage } from '../editor/importActions';
+import { shortcutLabel as sk } from '../editor/shortcuts';
 import { actualSize, fitToScreen, zoomStep } from '../editor/view';
 import { useT, type TKey } from '../i18n';
 import {
@@ -43,10 +46,13 @@ import { autoBindLayersAction } from '../store/boneActions';
 import { getState, setState, useEditor, type DialogId, type TileMode } from '../store/editorStore';
 import { addParticleLayerAction, openPartSplit } from '../store/toolActions';
 import { Icon } from './Icon';
+import { openTutorial } from './TutorialPanel';
 import { IconButton } from './ui';
 
 interface MenuItem {
   label: TKey;
+  /** 번역 글자 안의 {name} 같은 부분에 넣을 값 */
+  params?: Record<string, string | number>;
   shortcut?: string;
   run?: () => void;
   checked?: boolean;
@@ -75,6 +81,22 @@ function useMenus(): Menu[] {
   const showBones = useEditor((s) => s.showBones);
   const isGuide = useEditor((s) => !!s.project.layers.find((l) => l.id === s.currentLayerId)?.guide);
   useEditor((s) => s.docVersion); // 실행 취소 가능 여부 갱신용
+  useEditor((s) => s.shortcutsVersion); // 단축키를 바꾸면 메뉴 글자도 갱신
+  const recent = useRecent((s) => s.list);
+  // 최근 파일 (최대 5개) – 목록이 비어 있으면 메뉴에 나오지 않습니다.
+  const recentItems: MenuEntry[] =
+    recent.length === 0
+      ? []
+      : [
+          { header: 'menu.recent' },
+          ...recent.slice(0, 5).map(
+            (r): MenuItem => ({
+              label: 'menu.recentItem',
+              params: { name: r.name },
+              run: () => confirmDiscard(() => void openRecent(r)),
+            }),
+          ),
+        ];
 
   const tile = (mode: TileMode): MenuItem => ({
     label: `menu.tileMode.${mode}` as TKey,
@@ -87,39 +109,42 @@ function useMenus(): Menu[] {
       id: 'file',
       label: 'menu.file',
       items: [
-        { label: 'menu.new', shortcut: 'Alt+N', run: () => confirmDiscard(() => openDialog('new')) },
-        { label: 'menu.open', shortcut: 'Ctrl+O', run: () => confirmDiscard(() => void openFile()) },
+        { label: 'menu.new', shortcut: sk('menu.new', 'Alt+N'), run: () => confirmDiscard(() => openDialog('new')) },
+        { label: 'menu.open', shortcut: sk('menu.open', 'Ctrl+O'), run: () => confirmDiscard(() => void openFile()) },
+        ...recentItems,
         'sep',
-        { label: 'menu.save', shortcut: 'Ctrl+S', run: () => void saveProject(false) },
-        { label: 'menu.saveAs', shortcut: 'Ctrl+Shift+S', run: () => void saveProject(true) },
+        { label: 'menu.save', shortcut: sk('menu.save', 'Ctrl+S'), run: () => void saveProject(false) },
+        { label: 'menu.saveAs', shortcut: sk('menu.saveAs', 'Ctrl+Shift+S'), run: () => void saveProject(true) },
         'sep',
         { label: 'menu.importLayer', run: () => void importImageAsLayer() },
         { label: 'menu.importReference', run: () => void importReferenceImage() },
         { label: 'menu.importSheet', run: () => openDialog('importSheet') },
         { label: 'menu.pixelFixer', run: () => openDialog('pixelFixer') },
         'sep',
-        { label: 'menu.export', shortcut: 'Ctrl+E', run: () => openDialog('export') },
+        { label: 'menu.export', shortcut: sk('menu.export', 'Ctrl+E'), run: () => openDialog('export') },
+        'sep',
+        { label: 'menu.settings', shortcut: sk('menu.settings', 'Ctrl+,'), run: () => openDialog('settings') },
       ],
     },
     {
       id: 'edit',
       label: 'menu.edit',
       items: [
-        { label: 'menu.undo', shortcut: 'Ctrl+Z', run: undo, disabled: !history.canUndo() },
-        { label: 'menu.redo', shortcut: 'Ctrl+Shift+Z', run: redo, disabled: !history.canRedo() },
+        { label: 'menu.undo', shortcut: sk('menu.undo', 'Ctrl+Z'), run: undo, disabled: !history.canUndo() },
+        { label: 'menu.redo', shortcut: sk('menu.redo', 'Ctrl+Shift+Z'), run: redo, disabled: !history.canRedo() },
         'sep',
-        { label: 'menu.cut', shortcut: 'Ctrl+X', run: cutSelection },
-        { label: 'menu.copy', shortcut: 'Ctrl+C', run: () => void copySelection() },
-        { label: 'menu.paste', shortcut: 'Ctrl+V', run: () => void pasteFromMenu() },
-        { label: 'menu.clear', shortcut: 'Delete', run: () => clearSelectionPixels() },
+        { label: 'menu.cut', shortcut: sk('menu.cut', 'Ctrl+X'), run: cutSelection },
+        { label: 'menu.copy', shortcut: sk('menu.copy', 'Ctrl+C'), run: () => void copySelection() },
+        { label: 'menu.paste', shortcut: sk('menu.paste', 'Ctrl+V'), run: () => void pasteFromMenu() },
+        { label: 'menu.clear', shortcut: sk('menu.clear', 'Delete'), run: () => clearSelectionPixels() },
         'sep',
-        { label: 'menu.selectAll', shortcut: 'Ctrl+A', run: selectAll },
-        { label: 'menu.deselect', shortcut: 'Ctrl+D', run: deselect, disabled: !hasSelection },
-        { label: 'menu.invertSelection', shortcut: 'Ctrl+Shift+I', run: invertSelection },
+        { label: 'menu.selectAll', shortcut: sk('menu.selectAll', 'Ctrl+A'), run: selectAll },
+        { label: 'menu.deselect', shortcut: sk('menu.deselect', 'Ctrl+D'), run: deselect, disabled: !hasSelection },
+        { label: 'menu.invertSelection', shortcut: sk('menu.invertSelection', 'Ctrl+Shift+I'), run: invertSelection },
         'sep',
-        { label: 'menu.flipH', shortcut: 'Shift+H', run: () => flipSelectionOrCel('horizontal') },
-        { label: 'menu.flipV', shortcut: 'Shift+V', run: () => flipSelectionOrCel('vertical') },
-        { label: 'menu.replaceColor', shortcut: 'Shift+R', run: () => openDialog('replaceColor') },
+        { label: 'menu.flipH', shortcut: sk('menu.flipH', 'Shift+H'), run: () => flipSelectionOrCel('horizontal') },
+        { label: 'menu.flipV', shortcut: sk('menu.flipV', 'Shift+V'), run: () => flipSelectionOrCel('vertical') },
+        { label: 'menu.replaceColor', shortcut: sk('menu.replaceColor', 'Shift+R'), run: () => openDialog('replaceColor') },
       ],
     },
     {
@@ -134,7 +159,7 @@ function useMenus(): Menu[] {
         { label: 'menu.rotateCW', run: () => rotateCanvasAction(true) },
         { label: 'menu.rotateCCW', run: () => rotateCanvasAction(false) },
         'sep',
-        { label: 'menu.cleanup', shortcut: 'Shift+L', run: () => openDialog('cleanup') },
+        { label: 'menu.cleanup', shortcut: sk('menu.cleanup', 'Shift+L'), run: () => openDialog('cleanup') },
         { label: 'menu.pixelFixer', run: () => openDialog('pixelFixer') },
       ],
     },
@@ -142,15 +167,15 @@ function useMenus(): Menu[] {
       id: 'layer',
       label: 'menu.layer',
       items: [
-        { label: 'menu.newLayer', shortcut: 'Shift+N', run: addLayerAction },
+        { label: 'menu.newLayer', shortcut: sk('menu.newLayer', 'Shift+N'), run: addLayerAction },
         { label: 'menu.newGroup', run: addGroupAction },
         { label: 'menu.newSketch', run: addSketchLayerAction },
         { label: 'menu.importReference', run: () => void importReferenceImage() },
         'sep',
         { label: 'menu.duplicateLayer', run: duplicateLayerAction },
         { label: 'menu.deleteLayer', run: () => deleteLayerAction() },
-        { label: 'menu.layerUp', shortcut: 'Ctrl+↑', run: () => moveLayerBy(1) },
-        { label: 'menu.layerDown', shortcut: 'Ctrl+↓', run: () => moveLayerBy(-1) },
+        { label: 'menu.layerUp', shortcut: sk('menu.layerUp', 'Ctrl+↑'), run: () => moveLayerBy(1) },
+        { label: 'menu.layerDown', shortcut: sk('menu.layerDown', 'Ctrl+↓'), run: () => moveLayerBy(-1) },
         'sep',
         { label: 'menu.mergeDown', run: mergeDownAction },
         { label: 'menu.bakeLayer', run: () => bakeLayerAction() },
@@ -164,24 +189,24 @@ function useMenus(): Menu[] {
       id: 'frame',
       label: 'menu.frame',
       items: [
-        { label: playing ? 'menu.pause' : 'menu.play', shortcut: 'Enter', run: () => setState((s) => ({ playing: !s.playing })) },
+        { label: playing ? 'menu.pause' : 'menu.play', shortcut: sk('shortcut.play', 'Enter'), run: () => setState((s) => ({ playing: !s.playing })) },
         'sep',
-        { label: 'menu.newFrame', shortcut: 'N', run: addFrameAction },
-        { label: 'menu.duplicateFrame', shortcut: 'Shift+D', run: () => duplicateFramesAction() },
+        { label: 'menu.newFrame', shortcut: sk('menu.newFrame', 'N'), run: addFrameAction },
+        { label: 'menu.duplicateFrame', shortcut: sk('menu.duplicateFrame', 'Shift+D'), run: () => duplicateFramesAction() },
         { label: 'menu.deleteFrame', run: deleteFramesAction },
         { label: 'menu.frameLeft', run: () => moveCurrentFrameBy(-1) },
         { label: 'menu.frameRight', run: () => moveCurrentFrameBy(1) },
         { label: 'menu.reverseFrames', run: reverseFramesAction },
         'sep',
-        { label: 'menu.inbetween', shortcut: 'Shift+I', run: openInbetweenDialog },
+        { label: 'menu.inbetween', shortcut: sk('menu.inbetween', 'Shift+I'), run: openInbetweenDialog },
         { label: 'menu.linkCels', run: linkCelsAction },
         { label: 'menu.unlinkCels', run: unlinkCelAction },
         { label: 'menu.clearCels', run: clearCelsAction },
         'sep',
         { header: 'menu.keyframes' },
-        { label: 'menu.addKey', shortcut: 'K', run: toggleKeyframeAction },
-        { label: 'timeline.prevKey', shortcut: 'Shift+,', run: () => gotoNeighborKey(-1) },
-        { label: 'timeline.nextKey', shortcut: 'Shift+.', run: () => gotoNeighborKey(1) },
+        { label: 'menu.addKey', shortcut: sk('menu.addKey', 'K'), run: toggleKeyframeAction },
+        { label: 'timeline.prevKey', shortcut: sk('timeline.prevKey', 'Shift+,'), run: () => gotoNeighborKey(-1) },
+        { label: 'timeline.nextKey', shortcut: sk('timeline.nextKey', 'Shift+.'), run: () => gotoNeighborKey(1) },
         { label: 'anim.clear', run: clearAnimationAction },
         'sep',
         { label: 'menu.frameDuration', run: () => openDialog('frameDuration') },
@@ -198,8 +223,8 @@ function useMenus(): Menu[] {
       id: 'effects',
       label: 'menu.effects',
       items: [
-        { label: 'menu.vfx', shortcut: 'Shift+X', run: () => openDialog('vfx') },
-        { label: 'menu.cleanup', shortcut: 'Shift+L', run: () => openDialog('cleanup') },
+        { label: 'menu.vfx', shortcut: sk('menu.vfx', 'Shift+X'), run: () => openDialog('vfx') },
+        { label: 'menu.cleanup', shortcut: sk('menu.cleanup', 'Shift+L'), run: () => openDialog('cleanup') },
         {
           label: 'menu.effectsPanel',
           run: () => setState((s) => ({ collapsed: { ...s.collapsed, effects: false } })),
@@ -214,8 +239,8 @@ function useMenus(): Menu[] {
         ),
         'sep',
         { header: 'menu.bones' },
-        { label: 'tool.bone', shortcut: 'J', run: () => setState({ tool: 'bone' }) },
-        { label: 'tool.pose', shortcut: 'P', run: () => setState({ tool: 'pose' }) },
+        { label: 'tool.bone', shortcut: sk('tool.bone', 'J'), run: () => setState({ tool: 'bone' }) },
+        { label: 'tool.pose', shortcut: sk('tool.pose', 'P'), run: () => setState({ tool: 'pose' }) },
         { label: 'bones.autoBind', run: autoBindLayersAction },
       ],
     },
@@ -234,12 +259,12 @@ function useMenus(): Menu[] {
       id: 'view',
       label: 'menu.view',
       items: [
-        { label: 'menu.zoomIn', shortcut: '+', run: () => zoomStep(1) },
-        { label: 'menu.zoomOut', shortcut: '-', run: () => zoomStep(-1) },
-        { label: 'menu.fit', shortcut: '0', run: fitToScreen },
-        { label: 'menu.actualSize', shortcut: '1', run: actualSize },
+        { label: 'menu.zoomIn', shortcut: sk('menu.zoomIn', '+'), run: () => zoomStep(1) },
+        { label: 'menu.zoomOut', shortcut: sk('menu.zoomOut', '-'), run: () => zoomStep(-1) },
+        { label: 'menu.fit', shortcut: sk('menu.fit', '0'), run: fitToScreen },
+        { label: 'menu.actualSize', shortcut: sk('menu.actualSize', '1'), run: actualSize },
         'sep',
-        { label: 'menu.grid', shortcut: 'Ctrl+G', checked: showGrid, run: () => setState({ showGrid: !showGrid }) },
+        { label: 'menu.grid', shortcut: sk('menu.grid', 'Ctrl+G'), checked: showGrid, run: () => setState({ showGrid: !showGrid }) },
         { label: 'menu.tileGrid', checked: showTileGrid, run: () => setState({ showTileGrid: !showTileGrid }) },
         { label: 'menu.tile8', checked: showTileGrid && tileSize === 8, run: () => setState({ tileSize: 8, showTileGrid: true }) },
         { label: 'menu.tile16', checked: showTileGrid && tileSize === 16, run: () => setState({ tileSize: 16, showTileGrid: true }) },
@@ -253,11 +278,11 @@ function useMenus(): Menu[] {
         'sep',
         {
           label: 'menu.onion',
-          shortcut: 'Shift+O',
+          shortcut: sk('menu.onion', 'Shift+O'),
           checked: onion.enabled,
           run: () => setState({ onion: { ...onion, enabled: !onion.enabled } }),
         },
-        { label: 'bones.show', shortcut: 'Shift+B', checked: showBones, run: () => setState({ showBones: !showBones }) },
+        { label: 'bones.show', shortcut: sk('bones.show', 'Shift+B'), checked: showBones, run: () => setState({ showBones: !showBones }) },
         'sep',
         { label: 'menu.themeDark', checked: theme === 'dark', run: () => setState({ theme: 'dark' }) },
         { label: 'menu.themeLight', checked: theme === 'light', run: () => setState({ theme: 'light' }) },
@@ -269,11 +294,17 @@ function useMenus(): Menu[] {
       label: 'menu.help',
       items: [
         { label: 'menu.welcome', run: () => openDialog('welcome') },
-        { label: 'menu.shortcuts', shortcut: 'F1', run: () => openDialog('shortcuts') },
+        { label: 'menu.tutorial', run: () => openTutorial() },
+        { header: 'menu.samples' },
+        ...SAMPLE_IDS.map((id): MenuItem => ({ label: `sample.${id}` as TKey, run: () => openSample(id) })),
+        'sep',
+        { label: 'menu.shortcuts', shortcut: sk('menu.shortcuts', 'F1'), run: () => openDialog('shortcuts') },
         'sep',
         { label: 'menu.langKo', checked: language === 'ko', run: () => setState({ language: 'ko' }) },
         { label: 'menu.langEn', checked: language === 'en', run: () => setState({ language: 'en' }) },
         'sep',
+        { label: 'menu.settings', run: () => openDialog('settings') },
+        { label: 'license.title', run: () => openDialog('license') },
         { label: 'menu.about', run: () => openDialog('about') },
       ],
     },
@@ -350,7 +381,7 @@ export function MenuBar() {
                       }}
                     >
                       <span className="menu-check">{item.checked ? <Icon name="check" size={14} /> : null}</span>
-                      <span className="menu-label">{t(item.label)}</span>
+                      <span className="menu-label">{t(item.label, item.params)}</span>
                       {item.shortcut && <span className="menu-shortcut">{item.shortcut}</span>}
                     </button>
                   );

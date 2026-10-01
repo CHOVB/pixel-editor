@@ -24,15 +24,19 @@ import { Timeline } from './components/Timeline';
 import { ToastHost } from './components/ToastHost';
 import { ToolOptionsBar } from './components/ToolOptionsBar';
 import { Toolbar } from './components/Toolbar';
+import { TutorialPanel } from './components/TutorialPanel';
 import { TooltipLayer } from './components/ui';
 import { pasteImageBlob, pasteInternal } from './editor/clipboard';
-import { confirmDiscard, importImageFileAsLayer, openFileObject, startAutosave } from './editor/fileActions';
+import { installCrashGuard } from './editor/crashGuard';
+import { confirmDiscard, DEFAULT_AUTOSAVE_SECONDS, importImageFileAsLayer, openFileObject, startAutosave } from './editor/fileActions';
+import { loadRecentFiles } from './editor/recentFiles';
+import { desktopLaunchFile } from './platform/desktop';
 import { handleKeyDown } from './editor/shortcuts';
 import { usePlayback } from './editor/usePlayback';
 import { useT } from './i18n';
 import { notify } from './store/actions';
 import { getState, setState, useEditor, type Theme } from './store/editorStore';
-import { savePrefs } from './store/prefs';
+import { loadPrefs, savePrefs } from './store/prefs';
 
 const MIN_BOTTOM = 120;
 const MAX_BOTTOM_RATIO = 0.6;
@@ -118,9 +122,28 @@ function useGlobalEvents() {
     };
   }, [t]);
 
-  // 6) 자동 저장 시작
+  // 6) 자동 저장 시작 (간격은 환경설정) + 오류 감시 + 최근 파일 목록 불러오기
   useEffect(() => {
-    startAutosave();
+    startAutosave(loadPrefs().autosaveSeconds ?? DEFAULT_AUTOSAVE_SECONDS);
+    void loadRecentFiles();
+    return installCrashGuard();
+  }, []);
+
+  // 6-1) 설치한 앱(PWA)이나 데스크톱 앱을 .pxe / .aseprite 파일 더블클릭으로 열었을 때
+  useEffect(() => {
+    void desktopLaunchFile().then((r) => {
+      if (!r) return;
+      setState({ dialog: null });
+      void openFileObject(r.file, r.handle);
+    });
+    const launchQueue = (window as unknown as { launchQueue?: { setConsumer: (cb: (p: { files: FileSystemFileHandle[] }) => void) => void } }).launchQueue;
+    launchQueue?.setConsumer(async (params) => {
+      const handle = params.files[0];
+      if (!handle) return;
+      const file = await handle.getFile();
+      setState({ dialog: null });
+      confirmDiscard(() => void openFileObject(file, handle as unknown as Parameters<typeof openFileObject>[1]));
+    });
   }, []);
 
   // 7) 환경설정이 바뀌면 저장
@@ -183,8 +206,9 @@ function useTheme(): void {
     return () => media.removeEventListener('change', onChange);
   }, [theme]);
   useEffect(() => {
+    // 화면 전체 크기 조절 (CSS zoom: 버튼/글자/패널이 함께 커짐)
     document.documentElement.style.setProperty('--ui-scale', String(uiScale));
-    document.documentElement.style.fontSize = `${13 * uiScale}px`;
+    (document.body.style as CSSStyleDeclaration & { zoom: string }).zoom = uiScale === 1 ? '' : String(uiScale);
   }, [uiScale]);
 }
 
@@ -245,6 +269,7 @@ export function App() {
         </aside>
       </div>
       <StatusBar />
+      <TutorialPanel />
       <DialogHost />
       <ContextMenuHost />
       <ToastHost />

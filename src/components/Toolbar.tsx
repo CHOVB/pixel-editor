@@ -5,7 +5,7 @@
  * 버튼에 마우스를 올리면 "도구 이름 + 단축키" 말풍선이 나옵니다.
  */
 import { colorToCss } from '../core/color';
-import { setTool } from '../editor/shortcuts';
+import { setTool, shortcutLabel } from '../editor/shortcuts';
 import { useT } from '../i18n';
 import { swapColors } from '../store/actions';
 import { getState, saveCollapsed, setState, useEditor } from '../store/editorStore';
@@ -26,6 +26,7 @@ export function Toolbar() {
   const primary = useEditor((s) => s.primary);
   const secondary = useEditor((s) => s.secondary);
   const activeSlot = useEditor((s) => s.activeSlot);
+  useEditor((s) => s.shortcutsVersion); // 단축키를 바꾸면 말풍선 글자도 갱신
 
   return (
     <aside className="toolbar" aria-label={t('panel.tools')}>
@@ -35,7 +36,7 @@ export function Toolbar() {
             key={info.id}
             icon={info.id as IconName}
             label={t(info.name)}
-            shortcut={info.key}
+            shortcut={shortcutLabel(info.name, info.key)}
             active={tool === info.id}
             onClick={() => setTool(info.id)}
             size={20}
