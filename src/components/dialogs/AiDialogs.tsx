@@ -152,6 +152,8 @@ export function PartFillDialog() {
   useEffect(() => {
     if (!plan) closeDialog();
   }, [plan]);
+  // 창이 어떤 방법으로 닫혀도(취소 버튼, Codex 설정으로 이동 등) 진행 중인 Codex 작업을 멈춥니다.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const autoFilled = useMemo(() => (plan ? autoFillHole(plan) : null), [plan]);
   const filled = method === 'auto' ? autoFilled : method === 'codex' ? (codexResult && plan ? mergeMasked(plan.body, codexResult, plan.hole) : null) : plan?.body ?? null;

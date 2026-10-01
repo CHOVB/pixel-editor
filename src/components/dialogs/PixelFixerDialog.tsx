@@ -48,6 +48,9 @@ export function PixelFixerDialog({ file }: { file?: File }) {
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiBusy, setAiBusy] = useState(false);
   const [aiLog, setAiLog] = useState('');
+  const abortRef = useRef<AbortController | null>(null);
+  // 창이 어떤 방법으로 닫혀도(취소 버튼, Esc 등) 진행 중인 Codex 작업을 멈춥니다.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const load = useCallback(async (f: Blob, name: string) => {
     try {
@@ -157,13 +160,17 @@ export function PixelFixerDialog({ file }: { file?: File }) {
 
   const generate = async () => {
     if (!aiPrompt.trim()) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
     setAiBusy(true);
     setAiLog('');
     try {
-      const blob = await codexGenerateSprite(aiPrompt.trim(), targetW, { onLog: setAiLog });
+      const blob = await codexGenerateSprite(aiPrompt.trim(), targetW, { onLog: setAiLog, signal: controller.signal });
       await load(blob, 'codex.png');
     } catch (err) {
-      notify(t('toast.codexFailed', { error: err instanceof Error ? err.message : String(err) }), 'error');
+      if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        notify(t('toast.codexFailed', { error: err instanceof Error ? err.message : String(err) }), 'error');
+      }
     } finally {
       setAiBusy(false);
     }

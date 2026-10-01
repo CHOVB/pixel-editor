@@ -209,7 +209,7 @@ export function InbetweenDialog({ from: initFrom = 0, to: initTo = 1 }: { from?:
               <EaseEditor value={ease} onChange={setEase} />
             </>
           )}
-          {method === 'codex' && <pre className="log-box">{log || t('dialog.codex.waiting')}</pre>}
+          {method === 'codex' && (busy || log) && <pre className="log-box">{log || t('dialog.codex.waiting')}</pre>}
         </div>
       </div>
     </Modal>

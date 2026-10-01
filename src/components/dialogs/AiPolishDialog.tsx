@@ -34,6 +34,8 @@ export function AiPolishDialog() {
   useEffect(() => {
     void getCodexStatus().then(setStatus);
   }, []);
+  // 창이 어떤 방법으로 닫혀도(취소 버튼 등) 진행 중인 Codex 작업을 멈춥니다.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const range = ranges.find((r) => r.id === rangeId) ?? ranges[0];
   const frames = useMemo(() => Array.from({ length: range.to - range.from + 1 }, (_, i) => range.from + i), [range]);
