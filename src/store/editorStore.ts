@@ -63,7 +63,8 @@ export type DialogId =
   | 'vfx'
   | 'cleanup'
   | 'settings'
-  | 'license';
+  | 'license'
+  | 'frameTransform';
 
 export interface DialogState {
   id: DialogId;
@@ -83,6 +84,8 @@ export interface OnionSettings {
   wrap: boolean;
   /** 항상 함께 보여줄 기준 프레임 (null = 없음) */
   pinnedFrameId: string | null;
+  /** 그림/키프레임이 바뀌는 프레임만 비춰 보기 */
+  keysOnly: boolean;
 }
 
 export interface Toast {
@@ -221,7 +224,7 @@ const initialProject = createProject(32, 32, {
   layerName: `${dict['layer.defaultName']} 1`,
 });
 
-const defaultOnion: OnionSettings = { enabled: false, before: 1, after: 1, opacity: 0.35, tint: true, wrap: false, pinnedFrameId: null };
+const defaultOnion: OnionSettings = { enabled: false, before: 1, after: 1, opacity: 0.35, tint: true, wrap: false, pinnedFrameId: null, keysOnly: false };
 
 export const useEditor = create<EditorState>(() => ({
   project: initialProject,

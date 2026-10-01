@@ -17,7 +17,7 @@ export interface Prefs {
   brushShape?: BrushShape;
   pixelPerfect?: boolean;
   paletteId?: string;
-  onion?: { enabled: boolean; before: number; after: number; opacity: number; tint: boolean; wrap?: boolean };
+  onion?: { enabled: boolean; before: number; after: number; opacity: number; tint: boolean; wrap?: boolean; keysOnly?: boolean };
   bottomHeight?: number;
   linkOnDuplicate?: boolean;
   theme?: 'dark' | 'light' | 'system';

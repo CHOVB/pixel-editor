@@ -1081,6 +1081,26 @@ export const ko = {
   'crash.copied': '복사했어요!',
   'crash.details': '자세한 내용 (개발자용)',
   'crash.toast': '오류가 생겼지만 작업은 자동 저장했어요. 계속 문제가 생기면 저장 후 다시 시작해 주세요.',
+  /* 프레임 일괄 변형 / 어니언 키프레임만 */
+  'menu.frameTransform': '프레임 일괄 변형 (이동·뒤집기·회전)…',
+  'history.frameTransform': '프레임 일괄 변형',
+  'toast.nothingToTransform': '바꿀 그림이 없어요. (잠긴 레이어는 건너뛰어요)',
+  'timeline.onionKeysOnly': '바뀌는 프레임만 (키프레임)',
+  'timeline.onionKeysOnlyTip': '그림이 새로 시작되거나 키프레임(◆)이 있는 프레임만 비춰 봐요. 홀드가 긴 애니메이션에서 유용해요.',
+  'dialog.frameTf.title': '프레임 일괄 변형',
+  'dialog.frameTf.intro': '고른 프레임들의 그림을 한 번에 옮기고, 뒤집고, 돌려요. 링크된 그림은 링크를 유지해요. (Shift+H / Shift+V 도 고른 프레임 전체에 적용돼요)',
+  'dialog.frameTf.frames': '적용할 프레임',
+  'dialog.frameTf.range': '고른 프레임 ({from}~{to})',
+  'dialog.frameTf.layers': '적용할 레이어',
+  'dialog.frameTf.move': '이동',
+  'dialog.frameTf.wrap': '반대편으로 이어지기',
+  'dialog.frameTf.wrapTip': '밀려난 부분이 반대쪽에서 다시 나와요 (반복 배경/타일용)',
+  'dialog.frameTf.flip': '뒤집기',
+  'dialog.frameTf.flipH': '좌우 뒤집기',
+  'dialog.frameTf.flipV': '상하 뒤집기',
+  'dialog.frameTf.rotate': '회전 (시계 방향)',
+  'dialog.frameTf.squareOnly': '90°/270° 회전은 정사각형 캔버스에서만 할 수 있어요',
+  'dialog.frameTf.info': '{count}개 프레임',
 } as const;
 
 export type TKey = keyof typeof ko;

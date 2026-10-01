@@ -149,6 +149,7 @@ export const SHORTCUTS: Shortcut[] = [
   { label: 'Shift+,', code: 'Comma', shift: true, group: 'animation', desc: 'timeline.prevKey', run: () => gotoNeighborKey(-1) },
   { label: 'Shift+.', code: 'Period', shift: true, group: 'animation', desc: 'timeline.nextKey', run: () => gotoNeighborKey(1) },
   { label: 'Alt+L', code: 'KeyL', alt: true, group: 'animation', desc: 'menu.linkCels', run: linkCelsAction },
+  { label: 'Alt+T', code: 'KeyT', alt: true, group: 'animation', desc: 'menu.frameTransform', run: () => setState({ dialog: { id: 'frameTransform' } }) },
 
   // 도우미 기능
   { label: 'Shift+I', code: 'KeyI', shift: true, group: 'helpers', desc: 'menu.inbetween', run: openInbetweenDialog },

@@ -633,9 +633,21 @@ export function clearSelectionPixels(label = tr('history.clear')): void {
 }
 
 /** 선택 영역(또는 현재 셀 전체)을 좌우/상하 뒤집기 */
+/** 프레임 범위 뒤집기 (frameActions 에서 연결 – 서로 불러오는 순환을 피하기 위해) */
+let flipRangeHook: ((axis: 'horizontal' | 'vertical') => void) | null = null;
+export function setFlipRangeHook(fn: (axis: 'horizontal' | 'vertical') => void): void {
+  flipRangeHook = fn;
+}
+
 export function flipSelectionOrCel(axis: 'horizontal' | 'vertical'): void {
   if (!canEditCurrentLayer()) return;
   const s = S();
+  // 선택 영역 없이 프레임을 여러 장 골랐으면 → 고른 프레임 전체를 한 번에 뒤집기
+  const [ra, rb] = selectedFrames();
+  if (!s.selection && rb > ra) {
+    flipRangeHook?.(axis);
+    return;
+  }
   const p = s.project;
   const frameId = currentEditFrameId();
   const cel = ensureCel(p, s.currentLayerId, frameId);

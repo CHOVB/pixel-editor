@@ -197,6 +197,7 @@ function useMenus(): Menu[] {
         { label: 'menu.frameLeft', run: () => moveCurrentFrameBy(-1) },
         { label: 'menu.frameRight', run: () => moveCurrentFrameBy(1) },
         { label: 'menu.reverseFrames', run: reverseFramesAction },
+        { label: 'menu.frameTransform', shortcut: sk('menu.frameTransform', 'Alt+T'), run: () => openDialog('frameTransform') },
         'sep',
         { label: 'menu.inbetween', shortcut: sk('menu.inbetween', 'Shift+I'), run: openInbetweenDialog },
         { label: 'menu.linkCels', run: linkCelsAction },

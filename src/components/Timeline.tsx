@@ -173,6 +173,7 @@ export function Timeline() {
       { label: t('menu.frameDuration'), run: () => setState({ dialog: { id: 'frameDuration', payload: { index } } }) },
       { label: t('menu.duplicateFrame'), run: () => duplicateFramesAction() },
       { label: t('menu.inbetween'), run: openInbetweenDialog },
+      { label: t('menu.frameTransform'), run: () => setState({ dialog: { id: 'frameTransform' } }) },
       {
         label: t('menu.newTag'),
         run: () => {
@@ -265,6 +266,10 @@ export function Timeline() {
               <label className="toggle-inline">
                 <input type="checkbox" checked={onion.wrap} onChange={(e) => setState({ onion: { ...onion, wrap: e.target.checked } })} />
                 {t('timeline.onionWrap')}
+              </label>
+              <label className="toggle-inline" data-tip={t('timeline.onionKeysOnlyTip')}>
+                <input type="checkbox" checked={onion.keysOnly} onChange={(e) => setState({ onion: { ...onion, keysOnly: e.target.checked } })} />
+                {t('timeline.onionKeysOnly')}
               </label>
               <p className="note">{t('timeline.onionPinTip')}</p>
             </div>

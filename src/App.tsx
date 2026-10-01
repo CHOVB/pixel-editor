@@ -37,6 +37,8 @@ import { useT } from './i18n';
 import { notify } from './store/actions';
 import { getState, setState, useEditor, type Theme } from './store/editorStore';
 import { loadPrefs, savePrefs } from './store/prefs';
+// 프레임 범위 뒤집기(Shift+H/V)를 연결하기 위해 미리 불러옵니다.
+import './store/frameActions';
 
 const MIN_BOTTOM = 120;
 const MAX_BOTTOM_RATIO = 0.6;

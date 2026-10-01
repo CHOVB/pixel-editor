@@ -17,6 +17,7 @@ import { apply, invert, isIdentity } from '../core/affine';
 import { colorToCss } from '../core/color';
 import { brushOffsets } from '../core/drawing';
 import { layerMatrix } from '../core/layerSpace';
+import { onionTargets } from '../core/frameTools';
 import { compositeFrame } from '../core/render';
 import { maskOutline, type Segment } from '../core/selection';
 import { boneEndpoints, poseWorld } from '../core/skeleton';
@@ -246,18 +247,18 @@ export function CanvasView() {
 
       // 어니언 스킨 (재생 중에는 숨김)
       if (s.onion.enabled && !s.playing && p.frames.length > 1) {
-        const count = p.frames.length;
-        const drawOnion = (offset: number, total: number, tint: string) => {
-          let fi = s.currentFrame + offset;
-          if (s.onion.wrap) fi = ((fi % count) + count) % count;
-          if (fi < 0 || fi >= count || fi === s.currentFrame) return;
-          const distance = Math.abs(offset);
-          const falloff = 1 - ((distance - 1) / Math.max(1, total)) * 0.6;
-          ctx.globalAlpha = s.onion.opacity * falloff;
-          ctx.drawImage(onionImage(fi, s.onion.tint ? tint : null), ox, oy, sw, sh);
+        // 앞/뒤 프레임 고르기 (keysOnly 면 그림·키프레임이 바뀌는 프레임만)
+        const targets = onionTargets(p, s.currentFrame, s.onion.before, s.onion.after, s.onion.keysOnly, s.onion.wrap);
+        const drawOnion = (list: number[], tint: string) => {
+          // 먼 프레임부터 그려서 가까운 프레임이 위에 오게
+          for (let k = list.length - 1; k >= 0; k--) {
+            const falloff = 1 - (k / Math.max(1, list.length)) * 0.6;
+            ctx.globalAlpha = s.onion.opacity * falloff;
+            ctx.drawImage(onionImage(list[k], s.onion.tint ? tint : null), ox, oy, sw, sh);
+          }
         };
-        for (let k = s.onion.before; k >= 1; k--) drawOnion(-k, s.onion.before, ONION_PREV_TINT);
-        for (let k = s.onion.after; k >= 1; k--) drawOnion(k, s.onion.after, ONION_NEXT_TINT);
+        drawOnion(targets.prev, ONION_PREV_TINT);
+        drawOnion(targets.next, ONION_NEXT_TINT);
         if (s.onion.pinnedFrameId) {
           const pi = p.frames.findIndex((f) => f.id === s.onion.pinnedFrameId);
           if (pi >= 0 && pi !== s.currentFrame) {

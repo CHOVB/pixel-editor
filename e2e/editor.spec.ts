@@ -71,6 +71,20 @@ test('draws two poses and generates in-betweens', async ({ page }) => {
   await expect.poll(() => frameCount(page)).toBe(8);
 });
 
+test('moves every frame at once with the frame transform dialog', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.sample-card', { hasText: '통통 슬라임' }).click();
+  await page.keyboard.press('Alt+t');
+  await expect(page.locator('.modal h2')).toHaveText('프레임 일괄 변형');
+  await page.locator('.modal .segmented button', { hasText: '모든 프레임' }).click();
+  await expect(page.locator('.modal .foot-info')).toHaveText('8개 프레임');
+  await page.locator('.modal .toggle', { hasText: '좌우 뒤집기' }).click();
+  await page.locator('.modal .btn.primary').click();
+  await expect(page.locator('.modal')).toHaveCount(0);
+  await page.keyboard.press('Control+z');
+  await expect(page.locator('.toast').last()).toContainText('프레임 일괄 변형');
+});
+
 test('cleans up an AI-made pixel image to true pixel size', async ({ page }) => {
   await page.goto('/');
   await page.locator('.welcome .btn.ghost.continue').click();
