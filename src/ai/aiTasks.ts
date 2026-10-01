@@ -14,6 +14,7 @@ import { upscaleInteger, uniqueColors } from '../core/pixels';
 import { cropBuffer } from '../core/pixelfix';
 import type { Color } from '../core/types';
 import { bufferToPngBlob, decodeImageFile } from '../platform/canvas';
+import { fitInbetweens } from '../core/aiInbetween';
 import { planLayout, postProcess, buildSheet, sheetSize } from '../core/aiPolish';
 import { contentBounds } from '../core/pixels';
 import { generatePrompt, inbetweenPrompt, inpaintPrompt, polishPrompt, runCodexJob } from './codex';
@@ -113,8 +114,9 @@ export async function codexInbetween(
     progress.signal,
   );
   const palette = Array.from(new Set([...uniqueColors(a, 256), ...uniqueColors(b, 256)]));
-  const strip = await toPixelArt(blob, w * count, h, palette);
-  return Array.from({ length: count }, (_, i) => cropBuffer(strip, w * count, { x: i * w, y: 0, w, h }));
+  // AI 가 캐릭터를 다른 크기로 그렸으면 시작/끝 프레임 크기와 발 위치에 맞춥니다.
+  const img = await decodeImageFile(blob);
+  return fitInbetweens(img.pixels, img.width, img.height, a, b, w, h, count, palette);
 }
 
 /** 설명으로 새 스프라이트 이미지를 만듭니다. (결과는 큰 이미지 → 도트 정리 기능으로 이어서 사용) */
