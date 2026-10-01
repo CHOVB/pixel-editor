@@ -256,6 +256,9 @@ function useMenus(): Menu[] {
         { label: 'menu.aiPartFill', run: openPartSplit },
         { label: 'menu.aiInbetween', run: openInbetweenDialog },
         { label: 'menu.aiFixer', run: () => openDialog('pixelFixer') },
+        'sep',
+        { label: 'menu.autoAnimate', run: () => openDialog('autoAnimate') },
+        { label: 'menu.aiPolish', run: () => openDialog('aiPolish') },
       ],
     },
     {

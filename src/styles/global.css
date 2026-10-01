@@ -3387,3 +3387,23 @@ kbd {
 .motion-options input[type='range'] {
   width: 140px;
 }
+
+/* AI 다듬기 */
+.polish-codex {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.polish-compare {
+  justify-content: center;
+  gap: 24px;
+  margin-top: 10px;
+}
+
+.anim-preview.polish-wait {
+  width: 220px;
+  height: 220px;
+}

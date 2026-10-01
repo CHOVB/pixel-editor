@@ -66,7 +66,8 @@ export type DialogId =
   | 'license'
   | 'frameTransform'
   | 'update'
-  | 'autoAnimate';
+  | 'autoAnimate'
+  | 'aiPolish';
 
 export interface DialogState {
   id: DialogId;

@@ -260,6 +260,47 @@ test('auto-animate turns one drawing into tagged motions (and undo restores it)'
   expect(await frameCount(page)).toBe(1);
 });
 
+test('AI polish sends the rig frames to Codex and adds the result as a new layer', async ({ page }) => {
+  // 가짜 Codex 브리지: 받은 격자 그림을 그대로 돌려줌 (실제 Codex 대신)
+  let job: { task: string; prompt: string; images: { name: string; data: string }[] } | null = null;
+  await page.route('http://127.0.0.1:47811/**', async (route) => {
+    const req = route.request();
+    const path = new URL(req.url()).pathname;
+    const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' };
+    const json = (body: unknown) => route.fulfill({ status: 200, headers, contentType: 'application/json', body: JSON.stringify(body) });
+    if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    if (path === '/status') return json({ connected: true, bridgeVersion: 'e2e', codexInstalled: true, loggedIn: true, authMode: 'chatgpt' });
+    if (path === '/jobs' && req.method() === 'POST') {
+      job = req.postDataJSON();
+      return json({ id: 'job1' });
+    }
+    if (path === '/jobs/job1') return json({ id: 'job1', status: 'done', log: 'done', result: job!.images.find((i) => i.name === 'frames.png')!.data });
+    return route.fulfill({ status: 404, headers, body: '{}' });
+  });
+  await page.goto('/');
+  await page.locator('.sample-card', { hasText: '모험가' }).click();
+  await page.locator('.modal .btn.primary', { hasText: '다음' }).click();
+  await page.locator('.modal .btn.primary', { hasText: '다음' }).click();
+  await page.locator('.modal .btn.primary', { hasText: '애니메이션 만들기' }).click();
+  await expect(page.locator('.modal')).toHaveCount(0);
+
+  await menu(page, 'AI', 'AI로 애니메이션 다듬기');
+  await expect(page.locator('.modal h2')).toContainText('AI로 애니메이션 다듬기');
+  await expect(page.locator('.modal select')).toContainText('걷기 (1~8)');
+  await expect(page.locator('.polish-compare canvas.anim-preview')).toHaveCount(1);
+  await page.locator('.modal .btn.accent', { hasText: 'AI로 다듬기' }).click();
+  await expect(page.locator('.polish-compare canvas.anim-preview')).toHaveCount(2, { timeout: 20_000 });
+  expect(job!.task).toBe('polish');
+  expect(job!.images.map((i) => i.name)).toEqual(['frames.png', 'character.png']);
+  expect(job!.prompt).toContain('8 animation frames');
+  await page.locator('.modal .btn.primary', { hasText: '적용' }).click();
+  await expect(page.locator('.modal')).toHaveCount(0);
+  await expect(page.locator('.tl-layer', { hasText: 'AI 다듬기 · 걷기' })).toBeVisible();
+  // 한 번에 되돌리기
+  await page.keyboard.press('Control+z');
+  await expect(page.locator('.tl-layer', { hasText: 'AI 다듬기' })).toHaveCount(0);
+});
+
 test('cleans up an AI-made pixel image to true pixel size', async ({ page }) => {
   await page.goto('/');
   await page.locator('.welcome .btn.ghost.continue').click();

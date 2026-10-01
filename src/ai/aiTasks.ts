@@ -4,6 +4,7 @@
  *  - 가려진 부분 채우기 (파츠 분리 후 몸통 빈 곳)
  *  - 중간 프레임 생성 (AI 방식)
  *  - 새 스프라이트 생성 (설명 → 이미지 → 도트 정리)
+ *  - 애니메이션 다듬기 (뼈대로 만든 프레임 → 손으로 그린 도트처럼)
  *
  * AI 는 큰 해상도의 그림을 돌려주므로, 항상 "원래 도트 크기로 축소 + 기존 색으로 맞추기" 를 거칩니다.
  * 그래서 결과가 기존 그림의 팔레트와 도트 크기에 딱 맞게 들어갑니다.
@@ -13,7 +14,9 @@ import { upscaleInteger, uniqueColors } from '../core/pixels';
 import { cropBuffer } from '../core/pixelfix';
 import type { Color } from '../core/types';
 import { bufferToPngBlob, decodeImageFile } from '../platform/canvas';
-import { generatePrompt, inbetweenPrompt, inpaintPrompt, runCodexJob } from './codex';
+import { planLayout, postProcess, buildSheet, sheetSize } from '../core/aiPolish';
+import { contentBounds } from '../core/pixels';
+import { generatePrompt, inbetweenPrompt, inpaintPrompt, polishPrompt, runCodexJob } from './codex';
 
 /** AI 가 보기 좋은 크기(약 512px)가 되도록 정수 배율 결정 */
 export function chooseScale(w: number, h: number, target = 512): number {
@@ -117,4 +120,48 @@ export async function codexInbetween(
 /** 설명으로 새 스프라이트 이미지를 만듭니다. (결과는 큰 이미지 → 도트 정리 기능으로 이어서 사용) */
 export async function codexGenerateSprite(description: string, sizeHint: number, progress: AiProgress = {}): Promise<Blob> {
   return runCodexJob({ task: 'generate', prompt: generatePrompt(description, sizeHint), images: [] }, progress.onLog, progress.signal);
+}
+
+export interface PolishOptions {
+  extra: string;
+  /** 움직이지 않는 곳을 프레임마다 똑같이 (깜빡임 줄이기) */
+  stabilize: boolean;
+}
+
+/**
+ * 뼈대로 만든 프레임들을 Codex 로 손그림처럼 다듬습니다.
+ * guides: 다듬을 프레임들 (캔버스 크기), reference: 원래 캐릭터 그림 (기본 자세, 캔버스 크기)
+ * 돌려주는 값: 다듬은 프레임들 (캔버스 크기, 원래 그림의 색으로만)
+ */
+export async function codexPolishFrames(
+  guides: Uint8ClampedArray[],
+  reference: Uint8ClampedArray,
+  w: number,
+  h: number,
+  opts: PolishOptions,
+  progress: AiProgress = {},
+): Promise<Uint8ClampedArray[]> {
+  const layout = planLayout(guides, w, h);
+  if (!layout) throw new Error('nothing to polish');
+  const size = sheetSize(layout);
+  const sheet = buildSheet(guides, w, layout);
+  // 기준 그림: 그림이 있는 곳만 잘라서 같은 배율로
+  const rb = contentBounds(reference, w, h) ?? { x: 0, y: 0, w, h };
+  const ref = cropBuffer(reference, w, rb);
+  // 쓸 수 있는 색: 원래 그림 + 프레임들에 실제로 쓰인 색 (뒤쪽 팔다리의 어두운 색, 번쩍임 등)
+  const palette = Array.from(new Set([...uniqueColors(reference, 256), ...guides.flatMap((g) => uniqueColors(g, 64))])).slice(0, 256);
+  const blob = await runCodexJob(
+    {
+      task: 'polish',
+      prompt: polishPrompt({ count: guides.length, cols: layout.cols, rows: layout.rows, cellW: layout.crop.w, cellH: layout.crop.h, scale: layout.scale, extra: opts.extra }),
+      images: [
+        { name: 'frames.png', png: await png(sheet, size.w, size.h, layout.scale) },
+        { name: 'character.png', png: await png(ref, rb.w, rb.h, layout.scale) },
+      ],
+    },
+    progress.onLog,
+    progress.signal,
+  );
+  const img = await decodeImageFile(blob);
+  return postProcess(img.pixels, img.width, img.height, layout, guides, w, h, palette, { stabilize: opts.stabilize });
 }

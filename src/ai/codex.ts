@@ -37,7 +37,7 @@ export interface CodexImage {
 }
 
 export interface CodexJobInput {
-  task: 'inpaint' | 'inbetween' | 'generate';
+  task: 'inpaint' | 'inbetween' | 'generate' | 'polish';
   prompt: string;
   images: CodexImage[];
 }
@@ -185,5 +185,32 @@ export function generatePrompt(description: string, sizeHint: number): string {
     'limited palette, crisp 1px outlines, no anti-aliasing, no blur, transparent background, single centered character/object, no text.',
     '',
     'Output: save the image as ./result.png. Reply with one short sentence when done.',
+  ].join('\n');
+}
+
+/** AI 다듬기: 뼈대로 만든 프레임들을 손으로 그린 도트처럼 다시 그리기 */
+export function polishPrompt(o: { count: number; cols: number; rows: number; cellW: number; cellH: number; scale: number; extra: string }): string {
+  const W = o.cols * o.cellW * o.scale;
+  const H = o.rows * o.cellH * o.scale;
+  return [
+    'You are assisting a pixel-art animation editor. Work only inside the current directory.',
+    '',
+    'Attached images:',
+    `1. frames.png — ${o.count} animation frames of ONE pixel-art character in a ${o.cols}x${o.rows} grid (left-to-right, top-to-bottom).`,
+    `   Each cell is ${o.cellW}x${o.cellH} sprite pixels, upscaled x${o.scale} (every ${o.scale}x${o.scale} block is ONE sprite pixel). Unused cells are empty.`,
+    '   The frames come from a cut-out puppet rig: poses and timing are correct, but rotated limbs have jagged or broken pixels,',
+    '   stiff joints and slightly inconsistent outlines.',
+    '2. character.png — the original hand-drawn character at the same scale. It is the identity reference (palette, outfit, proportions, face).',
+    '',
+    'Task: use your built-in image generation/editing tool (image_gen) to redraw EVERY frame as clean, hand-drawn pixel art of this character.',
+    'Rules:',
+    '- Keep each frame\'s pose, position inside its cell, size and silhouette almost exactly the same (frames must line up as an animation).',
+    '- Keep the character identical to character.png: same palette, outfit, proportions and outline color. No new objects, effects, shadows or background.',
+    '- Fix rotation artifacts: smooth jagged limbs, clean 1px outlines, natural elbows and knees, consistent shading from frame to frame.',
+    '- Very subtle natural follow-through (hair, cloth) is welcome; do not invent new poses.',
+    `- Keep exactly the same ${o.cols}x${o.rows} grid, cell size and ${o.scale}px block grid, with a fully transparent background.`,
+    o.extra ? `Extra instructions from the artist: ${o.extra}` : '',
+    '',
+    `Output: save the image as ./result.png (${W}x${H} preferred; the same aspect ratio is acceptable). Reply with one short sentence when done.`,
   ].join('\n');
 }

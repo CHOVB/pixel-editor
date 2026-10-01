@@ -793,6 +793,18 @@ export const EFFECTS: EffectDef[] = [
     apply: (src, _w, _h, p) => colorOverlay(src, colorParam(p.color, 0xffffffff), num(p.amount, 100) / 100),
   },
   {
+    // 불투명도: 효과 값 키프레임과 함께 쓰면 서서히 나타나기/사라지기. (AI 다듬기에서도 원래 그림을 그 구간만 숨기는 데 사용)
+    type: 'opacity',
+    params: [{ key: 'amount', kind: 'number', default: 100, min: 0, max: 100, step: 1 }],
+    apply: (src, _w, _h, p) => {
+      const k = Math.max(0, Math.min(100, num(p.amount, 100))) / 100;
+      if (k >= 1) return src;
+      const out = cloneBuffer(src);
+      for (let i = 3; i < out.length; i += 4) out[i] = out[i] * k;
+      return out;
+    },
+  },
+  {
     type: 'colorCycle',
     frameDependent: true,
     usesPalette: true,
@@ -945,6 +957,17 @@ export const EFFECT_PRESETS: EffectPreset[] = [
       { offset: -1, values: { amount: 0 }, ease: 'step' },
       { offset: 0, values: { amount: 100 }, ease: 'easeOut' },
       { offset: 3, values: { amount: 0 } },
+    ],
+  },
+  {
+    id: 'fadeOut',
+    type: 'opacity',
+    group: 'color',
+    params: { amount: 100 },
+    keys: [
+      { offset: -1, values: { amount: 100 }, ease: 'step' },
+      { offset: 0, values: { amount: 100 }, ease: 'easeIn' },
+      { offset: 5, values: { amount: 0 } },
     ],
   },
   {

@@ -32,6 +32,7 @@ import { openSample } from '../../editor/samples';
 import { useT, type TKey } from '../../i18n';
 import { autoAnimateAction, autoAnimSource, existingRigId, roomFor } from '../../store/autoAnimActions';
 import { getState, useEditor } from '../../store/editorStore';
+import { AnimPreview } from '../AnimPreview';
 import { ImagePreview, type PreviewTransform } from '../ImagePreview';
 import { Toggle } from '../ui';
 import { closeDialog, Modal } from './Modal';
@@ -49,53 +50,6 @@ const POINT_COLORS: Record<RigPointId, string> = {
 };
 
 const PART_COLOR_VALUES = Object.fromEntries(Object.entries(PART_COLORS).map(([k, v]) => [k, hexToColor(v) as Color])) as Record<RigPartId, Color>;
-
-/** 움직이는 작은 미리보기 */
-function AnimPreview({ preview, box, playing = true }: { preview: MotionPreview | null; box: number; playing?: boolean }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const c = ref.current;
-    if (!c || !preview || preview.frames.length === 0) return;
-    const dpr = window.devicePixelRatio || 1;
-    c.width = box * dpr;
-    c.height = box * dpr;
-    const ctx = c.getContext('2d');
-    if (!ctx) return;
-    // 그림이 있는 곳만 크게 (모든 프레임을 감싸는 영역 + 여유)
-    const b = preview.bounds ?? { x: 0, y: 0, w: preview.width, h: preview.height };
-    const side = Math.max(b.w, b.h) + 4;
-    const cx = b.x + b.w / 2 - side / 2;
-    const cy = b.y + b.h / 2 - side / 2;
-    const scale = Math.max(1, Math.floor((box * dpr) / side));
-    const ox = (box * dpr - side * scale) / 2;
-    const tmp = document.createElement('canvas');
-    tmp.width = preview.width;
-    tmp.height = preview.height;
-    const tctx = tmp.getContext('2d');
-    let frame = 0;
-    let last = performance.now();
-    let raf = 0;
-    const draw = () => {
-      if (!tctx) return;
-      tctx.putImageData(new ImageData(new Uint8ClampedArray(preview.frames[frame]), preview.width, preview.height), 0, 0);
-      ctx.clearRect(0, 0, c.width, c.height);
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(tmp, cx, cy, side, side, ox, ox, side * scale, side * scale);
-    };
-    const tick = (now: number) => {
-      if (playing && now - last >= preview.durations[frame]) {
-        last = now;
-        frame = (frame + 1) % preview.frames.length;
-        draw();
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    draw();
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [preview, box, playing]);
-  return <canvas ref={ref} className="anim-preview checker" style={{ width: box, height: box }} />;
-}
 
 export function AutoAnimateDialog() {
   const t = useT();
@@ -485,6 +439,7 @@ export function AutoAnimateDialog() {
       {step === 'motion' && (
         <>
           <p className="note">💡 {t('autoAnim.motionIntro')}</p>
+          <p className="note tiny">🤖 {t('autoAnim.polishHint')}</p>
           <div className="motion-grid">
             {MOTION_IDS.map((m) => {
               const on = motions.includes(m);
