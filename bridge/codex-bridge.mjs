@@ -21,7 +21,7 @@
  *
  * 외부 라이브러리 없이 Node.js 기본 기능만 사용합니다. (Node 18 이상)
  */
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import http from 'node:http';
@@ -56,6 +56,22 @@ function quoteWin(arg) {
   return `"${arg.replace(/"/g, '\\"')}"`;
 }
 
+/**
+ * 실행 중인 codex 멈추기.
+ * Windows 에서는 셸(cmd) → codex.cmd → node → codex 로 이어져서 child.kill() 은 cmd 만 끕니다.
+ * 그러면 Codex 가 계속 돌면서 결과를 만들고 ChatGPT 사용량도 계속 쓰므로 프로세스 트리 전체를 끝냅니다.
+ */
+function killTree(child) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  if (IS_WINDOWS && child.pid) {
+    spawnSync(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'taskkill.exe'), ['/PID', String(child.pid), '/T', '/F'], {
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+  }
+  child.kill();
+}
+
 /** 명령 실행 후 결과 모으기 */
 function run(cmd, args, { input, cwd, timeoutMs = 20000 } = {}) {
   return new Promise((resolve) => {
@@ -73,7 +89,7 @@ function run(cmd, args, { input, cwd, timeoutMs = 20000 } = {}) {
     }
     let stdout = '';
     let stderr = '';
-    const timer = setTimeout(() => child.kill(), timeoutMs);
+    const timer = setTimeout(() => killTree(child), timeoutMs);
     child.stdout?.on('data', (d) => (stdout += d));
     child.stderr?.on('data', (d) => (stderr += d));
     child.on('error', (err) => {
@@ -221,7 +237,7 @@ async function startJob({ task, prompt, images }) {
         if (job.status !== 'running') return;
         job.status = 'error';
         job.error = 'OpenAI 서버에 연결할 수 없어요 (인터넷/방화벽 확인) / Cannot reach OpenAI servers';
-        child.kill();
+        killTree(child);
       }, NETWORK_STALL_MS);
     }
   };
@@ -230,7 +246,9 @@ async function startJob({ task, prompt, images }) {
   child.stdin?.end(prompt);
   const timer = setTimeout(() => {
     appendLog(job, '\n[bridge] timeout – stopping codex\n');
-    child.kill();
+    job.status = 'error';
+    job.error = '시간이 너무 오래 걸려서 멈췄어요 / Timed out';
+    killTree(child);
   }, JOB_TIMEOUT_MS);
 
   child.on('error', (err) => {
@@ -336,8 +354,10 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       if (req.method === 'POST' && m[2]) {
-        job.status = 'cancelled';
-        job.child?.kill();
+        if (job.status === 'running') {
+          job.status = 'cancelled';
+          killTree(job.child);
+        }
         send(res, 200, { id: job.id, status: job.status }, origin);
         return;
       }
@@ -376,7 +396,7 @@ server.on('error', (err) => {
 // 브리지를 끌 때 실행 중인 Codex 작업도 함께 멈춥니다.
 function shutdown() {
   for (const job of jobs.values()) {
-    if (job.status === 'running') job.child?.kill();
+    if (job.status === 'running') killTree(job.child);
   }
   process.exit(0);
 }

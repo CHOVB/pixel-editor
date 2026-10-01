@@ -137,23 +137,74 @@ pub fn augmented_path() -> OsString {
     std::env::join_paths(dirs).unwrap_or_default()
 }
 
-/// Windows 에서는 npm 이 설치한 `codex.cmd` 를 실행하려면 cmd 를 거쳐야 합니다.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000; // 검은 콘솔 창을 띄우지 않음
+
+/// Windows 에서 codex 실행 파일 찾기. npm 은 `codex.cmd` 를 설치하므로 PATH 의 각 폴더에서 .exe/.cmd/.bat 순서로 찾습니다.
+/// (같은 폴더의 확장자 없는 `codex` 는 Git Bash 용 셸 스크립트라 실행할 수 없어서 건너뜀)
+#[cfg(windows)]
+fn resolve_windows_bin(bin: &str, path: &OsString) -> PathBuf {
+    let given = Path::new(bin);
+    let find = |p: &Path| -> Option<PathBuf> {
+        if p.extension().is_some() && p.is_file() {
+            return Some(p.to_path_buf());
+        }
+        ["exe", "cmd", "bat"]
+            .iter()
+            .map(|ext| {
+                let mut s = p.as_os_str().to_owned();
+                s.push(".");
+                s.push(ext);
+                PathBuf::from(s)
+            })
+            .find(|c| c.is_file())
+    };
+    if given.is_absolute() || given.components().count() > 1 {
+        return find(given).unwrap_or_else(|| given.to_path_buf());
+    }
+    std::env::split_paths(path).find_map(|dir| find(&dir.join(bin))).unwrap_or_else(|| given.to_path_buf())
+}
+
+/// codex 실행 준비.
+/// Windows 에서 `cmd /C <codex> ...` 로 실행하면 경로에 띄어쓰기가 있을 때 cmd 가 따옴표를 떼어 버려서 실행이 깨집니다.
+/// 그래서 실행 파일을 직접 찾아 실행합니다. (.cmd/.bat 은 Rust 표준 라이브러리가 cmd 규칙에 맞게 안전하게 감싸 줌)
 fn codex_command(bin: &str) -> Command {
+    let path = augmented_path();
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        let mut c = Command::new("cmd");
-        c.args(["/C", bin]);
-        c.creation_flags(0x0800_0000); // 검은 콘솔 창을 띄우지 않음
-        c.env("PATH", augmented_path());
+        let mut c = Command::new(resolve_windows_bin(bin, &path));
+        c.creation_flags(CREATE_NO_WINDOW);
+        c.env("PATH", path);
         c
     }
     #[cfg(not(windows))]
     {
         let mut c = Command::new(bin);
-        c.env("PATH", augmented_path());
+        c.env("PATH", path);
         c
     }
+}
+
+/// 실행 중인 codex 멈추기.
+/// Windows 의 npm 설치본은 cmd → codex.cmd → node → codex 로 이어져서 맨 위 프로세스만 끄면 Codex 가 계속 돕니다.
+/// (결과를 계속 만들고 ChatGPT 사용량도 계속 씀) 그래서 프로세스 트리 전체를 끝냅니다.
+fn kill_tree(child: &mut Child) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        if let Ok(None) = child.try_wait() {
+            let taskkill = std::env::var_os("SystemRoot").map(|r| PathBuf::from(r).join("System32").join("taskkill.exe")).unwrap_or_else(|| "taskkill".into());
+            let _ = Command::new(taskkill)
+                .args(["/PID", &child.id().to_string(), "/T", "/F"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
+    }
+    let _ = child.kill();
 }
 
 /// 명령 실행 후 (종료 코드, 표준 출력 + 오류 출력). 시간 초과면 강제 종료.
@@ -185,7 +236,7 @@ fn run_capture(bin: &str, args: &[&str], timeout: Duration) -> (i32, String) {
         match child.try_wait() {
             Ok(Some(status)) => break status.code().unwrap_or(-1),
             Ok(None) if start.elapsed() > timeout => {
-                let _ = child.kill();
+                kill_tree(&mut child);
                 let _ = child.wait();
                 break -1;
             }
@@ -417,7 +468,7 @@ impl CodexManager {
                 let j = &mut *guard;
                 if j.state.status != "running" {
                     if let Some(mut c) = j.child.take() {
-                        let _ = c.kill();
+                        kill_tree(&mut c);
                         let _ = c.wait();
                     }
                     return;
@@ -427,7 +478,7 @@ impl CodexManager {
                 match child.try_wait() {
                     Ok(Some(status)) => break status.code().unwrap_or(-1),
                     Ok(None) if stalled || started.elapsed() > timeout => {
-                        let _ = child.kill();
+                        kill_tree(child);
                         let _ = child.wait();
                         j.state.status = "error".into();
                         j.state.error = Some(if stalled {
@@ -489,7 +540,7 @@ impl CodexManager {
         if j.state.status == "running" {
             j.state.status = "cancelled".into();
             if let Some(c) = j.child.as_mut() {
-                let _ = c.kill();
+                kill_tree(c);
             }
         }
         Some(JobState { result: None, ..j.state.clone() })
@@ -500,7 +551,7 @@ impl CodexManager {
         for job in self.jobs.lock().unwrap().values() {
             let mut j = job.lock().unwrap();
             if let Some(c) = j.child.as_mut() {
-                let _ = c.kill();
+                kill_tree(c);
             }
         }
     }
