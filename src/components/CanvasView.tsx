@@ -391,8 +391,8 @@ export function CanvasView() {
         ctx.setLineDash([]);
       }
 
-      // 뼈대
-      if (p.bones.length > 0 && (s.showBones || showsBones(s.tool))) {
+      // 뼈대 (재생 중에는 그림만 보이게 숨김)
+      if (p.bones.length > 0 && !s.playing && (s.showBones || showsBones(s.tool))) {
         const world = poseWorld(p, s.currentFrame);
         ctx.save();
         for (const b of p.bones) {

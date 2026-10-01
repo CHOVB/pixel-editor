@@ -153,6 +153,7 @@ export const SHORTCUTS: Shortcut[] = [
 
   // 도우미 기능
   { label: 'Shift+I', code: 'KeyI', shift: true, group: 'helpers', desc: 'menu.inbetween', run: openInbetweenDialog },
+  { label: 'Shift+A', code: 'KeyA', shift: true, group: 'helpers', desc: 'menu.autoAnimate', run: () => setState({ dialog: { id: 'autoAnimate' } }) },
   { label: 'Shift+X', code: 'KeyX', shift: true, group: 'helpers', desc: 'menu.vfx', run: () => setState({ dialog: { id: 'vfx' } }) },
   { label: 'Shift+L', code: 'KeyL', shift: true, group: 'helpers', desc: 'menu.cleanup', run: () => setState({ dialog: { id: 'cleanup' } }) },
   { label: 'Shift+R', code: 'KeyR', shift: true, group: 'helpers', desc: 'menu.replaceColor', run: () => setState({ dialog: { id: 'replaceColor' } }) },

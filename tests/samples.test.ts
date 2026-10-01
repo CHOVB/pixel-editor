@@ -6,7 +6,7 @@ import { setPixel } from '../src/core/pixels';
 import { createProject, ensureCel, addFrame, layerHolds, sourceFrameId } from '../src/core/project';
 import { compositeFrame, renderLayer } from '../src/core/render';
 import { packColor } from '../src/core/color';
-import { buildSample, SAMPLE_IDS } from '../src/editor/samples';
+import { buildSample, SAMPLE_IDS, STILL_SAMPLES } from '../src/editor/samples';
 
 describe('samples', () => {
   for (const id of SAMPLE_IDS) {
@@ -20,7 +20,8 @@ describe('samples', () => {
       }
     });
 
-    it(`${id}: frames are animated (not all identical)`, () => {
+    // 그림 한 장짜리 예제(자동 애니메이션 연습용)는 아직 움직이지 않는 게 정상
+    it.skipIf(STILL_SAMPLES.includes(id))(`${id}: frames are animated (not all identical)`, () => {
       const p = buildSample(id);
       const frames = p.frames.map((_, f) => Array.from(compositeFrame(p, f)).join(','));
       expect(new Set(frames).size).toBeGreaterThan(1);

@@ -129,6 +129,8 @@ export interface BoneBinding {
   mode: 'rigid' | 'mesh';
   meshCols: number;
   meshRows: number;
+  /** rigid 로 돌릴 때 픽셀 계산 방법 (기본 nearest, 자동 리깅은 rotsprite – 회전해도 도트가 깔끔) */
+  method?: ResampleMethod;
 }
 
 export interface ParticleSettings {
@@ -237,6 +239,21 @@ export interface Bone {
   length: number;
   color: string;
   keys: BoneKey[];
+  /** 자동 리깅으로 만든 뼈라면: 어느 리그의 어느 부위인지 (동작 템플릿을 다시 적용할 때 사용) */
+  rig?: BoneRigInfo;
+}
+
+/** 자동 리깅 정보 (core/autoRig.ts) */
+export interface BoneRigInfo {
+  rigId: string;
+  /** torso, head, upperArmF ... / 'root' = 골반(전체 이동) */
+  part: string;
+  /** root 뼈에만: 캐릭터 키(픽셀), 바라보는 방향(1 = 오른쪽, -1 = 왼쪽), 보기 방향 */
+  height?: number;
+  facing?: 1 | -1;
+  view?: 'side' | 'front';
+  /** root 뼈에만: 리그 그룹 레이어 id */
+  groupId?: string;
 }
 
 /** 프로젝트에 포함된 외부 파일 (레퍼런스 이미지 등) */

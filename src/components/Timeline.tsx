@@ -300,6 +300,14 @@ export function Timeline() {
         <button type="button" className="btn small accent" onClick={openInbetweenDialog} data-tip={t('timeline.inbetweenTip')}>
           <Icon name="magic" size={14} /> {t('menu.inbetween')}
         </button>
+        <button
+          type="button"
+          className="btn small accent auto-anim-btn"
+          onClick={() => setState({ dialog: { id: 'autoAnimate' } })}
+          data-tip={t('timeline.autoAnimateTip')}
+        >
+          <Icon name="bone" size={14} /> {t('timeline.autoAnimate')}
+        </button>
         <IconButton
           icon="tag"
           label={t('menu.newTag')}

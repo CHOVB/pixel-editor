@@ -20,7 +20,7 @@ import { openTutorial } from '../TutorialPanel';
 import { closeDialog, Modal } from './Modal';
 import { SIZE_PRESETS } from './NewProjectDialog';
 
-const SAMPLE_EMOJI: Record<string, string> = { slime: '🟢', tree: '🌳', walk: '🚶', arm: '🦴' };
+const SAMPLE_EMOJI: Record<string, string> = { hero: '⚔️', slime: '🟢', tree: '🌳', walk: '🚶', arm: '🦴' };
 
 export function WelcomeDialog() {
   const t = useT();

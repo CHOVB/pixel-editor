@@ -3184,3 +3184,206 @@ kbd {
   flex: 1;
   min-width: 0;
 }
+
+/* ------------------------------------------------------------------ */
+/* 자동 애니메이션 마법사                                               */
+/* ------------------------------------------------------------------ */
+
+.auto-anim .wizard-steps {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.auto-anim .wizard-steps li {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  color: var(--text-dim);
+  font-size: 12px;
+  text-align: center;
+}
+
+.auto-anim .wizard-steps li.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+.auto-anim .wizard-steps li.done {
+  color: var(--success);
+}
+
+.auto-anim .reuse-choice {
+  margin-bottom: 10px;
+}
+
+.rig-canvas {
+  cursor: crosshair;
+  border-radius: var(--radius);
+}
+
+.rig-canvas.painting {
+  cursor: cell;
+}
+
+.rig-points {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rig-points button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  text-align: left;
+  font-size: 12px;
+}
+
+.rig-points button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.rig-points .dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: #181425;
+  font-size: 10px;
+  font-weight: 700;
+  flex: none;
+}
+
+.rig-points .ok {
+  color: var(--success);
+}
+
+.rig-points .todo {
+  color: var(--text-faint);
+}
+
+.part-legend {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin: 8px 0;
+}
+
+.part-legend button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  font-size: 12px;
+  text-align: left;
+}
+
+.part-legend button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.part-legend .swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex: none;
+}
+
+.auto-anim .toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.motion-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+@media (max-width: 900px) {
+  .motion-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.motion-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 6px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  font-size: 12px;
+}
+
+.motion-card.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.motion-card .motion-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+}
+
+.motion-card small {
+  color: var(--text-dim);
+}
+
+.anim-preview {
+  display: block;
+  border-radius: 6px;
+}
+
+.anim-preview.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 120px;
+  height: 120px;
+  background: var(--panel-3);
+}
+
+.motion-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.motion-options .opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.motion-options input[type='range'] {
+  width: 140px;
+}

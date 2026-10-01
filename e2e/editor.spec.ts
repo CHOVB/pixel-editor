@@ -235,6 +235,31 @@ test('a screen crash shows the recovery screen, can be reported and recovered', 
   await expect(page.locator('.main-canvas')).toBeVisible();
 });
 
+test('auto-animate turns one drawing into tagged motions (and undo restores it)', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.sample-card', { hasText: '모험가' }).click();
+  await expect(page.locator('.modal h2')).toContainText('자동 애니메이션');
+  // ① 점 7개가 자동으로 찍혀 있음
+  await expect(page.locator('.rig-points .ok')).toHaveCount(7);
+  await page.locator('.modal .btn.primary', { hasText: '다음' }).click();
+  // ② 부위 10개
+  await expect(page.locator('.part-legend button')).toHaveCount(10);
+  await page.locator('.modal .btn.primary', { hasText: '다음' }).click();
+  // ③ 동작 6개가 실제로 움직이는 미리보기
+  await expect(page.locator('.motion-card canvas.anim-preview')).toHaveCount(6, { timeout: 20_000 });
+  await page.locator('.motion-card', { hasText: '점프' }).click();
+  await expect(page.locator('.modal .foot-info')).toHaveText('동작 2개 · 프레임 20장');
+  await page.locator('.modal .btn.primary', { hasText: '애니메이션 만들기' }).click();
+  await expect(page.locator('.modal')).toHaveCount(0);
+  expect(await frameCount(page)).toBe(20);
+  await expect(page.locator('.tl-tags')).toContainText('걷기');
+  await expect(page.locator('.tl-tags')).toContainText('점프');
+  await expect(page.locator('.tl-layer', { hasText: '캐릭터 리그' })).toBeVisible();
+  // 한 번에 되돌리기
+  await page.keyboard.press('Control+z');
+  expect(await frameCount(page)).toBe(1);
+});
+
 test('cleans up an AI-made pixel image to true pixel size', async ({ page }) => {
   await page.goto('/');
   await page.locator('.welcome .btn.ghost.continue').click();

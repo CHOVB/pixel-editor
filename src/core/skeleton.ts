@@ -242,7 +242,7 @@ export function bindingKey(p: Project, layer: Layer, frameIndex: number): string
   if (!bind || !bind.boneId || !findBone(p, bind.boneId)) return null;
   const skins = skinMatrices(p, frameIndex);
   const bones = bind.mode === 'mesh' ? influenceBones(p, bind.boneId) : [findBone(p, bind.boneId) as Bone];
-  let key = `${bind.mode}:${bind.meshCols}x${bind.meshRows}`;
+  let key = `${bind.mode}:${bind.meshCols}x${bind.meshRows}:${bind.method ?? 'nearest'}`;
   let allIdentity = true;
   for (const b of bones) {
     const m = skins.get(b.id);
@@ -338,7 +338,7 @@ export function applyBinding(p: Project, layer: Layer, frameIndex: number, src: 
   const skins = skinMatrices(p, frameIndex);
   if (bind.mode === 'rigid') {
     const m = skins.get(bind.boneId);
-    return m ? transformBuffer(src, w, h, m, 'nearest') : src;
+    return m ? transformBuffer(src, w, h, m, bind.method ?? 'nearest') : src;
   }
   const bones = influenceBones(p, bind.boneId);
   const mesh = buildMesh(src, w, h, bind.meshCols, bind.meshRows);

@@ -201,6 +201,7 @@ function useMenus(): Menu[] {
         { label: 'menu.frameTransform', shortcut: sk('menu.frameTransform', 'Alt+T'), run: () => openDialog('frameTransform') },
         'sep',
         { label: 'menu.inbetween', shortcut: sk('menu.inbetween', 'Shift+I'), run: openInbetweenDialog },
+        { label: 'menu.autoAnimate', shortcut: sk('menu.autoAnimate', 'Shift+A'), run: () => openDialog('autoAnimate') },
         { label: 'menu.linkCels', run: linkCelsAction },
         { label: 'menu.unlinkCels', run: unlinkCelAction },
         { label: 'menu.clearCels', run: clearCelsAction },

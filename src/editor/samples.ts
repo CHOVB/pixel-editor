@@ -8,6 +8,7 @@
  *  - tree:  바람에 흔들리는 나무(흔들림 효과) + 떨어지는 낙엽(파티클)
  *  - walk:  걷기 핵심 자세 2장 → "자동 중간 프레임" 연습용
  *  - arm:   뼈대로 팔 흔들기 (뼈 키프레임)
+ *  - hero:  그림 한 장짜리 모험가 → "자동 애니메이션" 마법사로 걷기·점프 등을 바로 만들어 보기
  */
 import { hexToColor } from '../core/color';
 import { createTrack, setKey } from '../core/keyframes';
@@ -21,9 +22,12 @@ import { tr } from '../i18n';
 import { replaceProject } from '../store/actions';
 import { setState } from '../store/editorStore';
 import { confirmDiscard } from './fileActions';
+import { drawHero } from './sampleHero';
 
-export type SampleId = 'slime' | 'tree' | 'walk' | 'arm';
-export const SAMPLE_IDS: SampleId[] = ['slime', 'tree', 'walk', 'arm'];
+export type SampleId = 'slime' | 'tree' | 'walk' | 'arm' | 'hero';
+export const SAMPLE_IDS: SampleId[] = ['hero', 'slime', 'tree', 'walk', 'arm'];
+/** 움직임 없이 그림 한 장만 있는 예제 (자동 애니메이션 연습용) */
+export const STILL_SAMPLES: SampleId[] = ['hero'];
 
 /** 글자 지도로 그리기: 각 글자 → 색 (공백/점 = 투명) */
 function drawArt(p: Project, layerId: string, frameId: string, art: string[], colors: Record<string, string>, ox: number, oy: number): void {
@@ -213,7 +217,25 @@ function arm(): Project {
   return p;
 }
 
-const BUILDERS: Record<SampleId, () => Project> = { slime, tree, walk, arm };
+/* ------------------------------------------------------------------ */
+
+/** 모험가 한 장 (64×64, 점프할 공간을 위쪽에 남겨 둠) */
+export const HERO_OFFSET = { x: 8, y: 18 };
+
+function hero(): Project {
+  const p = base(64, 64, 1, 110, tr('sample.hero'));
+  const l = p.layers[0];
+  l.name = tr('sample.layer.character');
+  p.cels[`${l.id}|${p.frames[0].id}`] = drawHero(64, 64, HERO_OFFSET.x, HERO_OFFSET.y).pixels;
+  return p;
+}
+
+/** 예제 모험가의 자동 리깅 점 */
+export function heroRigPoints() {
+  return drawHero(64, 64, HERO_OFFSET.x, HERO_OFFSET.y).points;
+}
+
+const BUILDERS: Record<SampleId, () => Project> = { slime, tree, walk, arm, hero };
 
 export function buildSample(id: SampleId): Project {
   return BUILDERS[id]();
@@ -223,7 +245,9 @@ export function buildSample(id: SampleId): Project {
 export function openSample(id: SampleId, after?: () => void): void {
   confirmDiscard(() => {
     replaceProject(buildSample(id), null);
-    setState({ playing: id !== 'walk' });
+    setState({ playing: id !== 'walk' && !STILL_SAMPLES.includes(id) });
     after?.();
+    // 모험가: 바로 자동 애니메이션 마법사를 열어 줌 (점은 미리 찍어 둠)
+    if (id === 'hero') setState({ dialog: { id: 'autoAnimate', payload: { points: heroRigPoints() } } });
   });
 }

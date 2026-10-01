@@ -65,7 +65,8 @@ export type DialogId =
   | 'settings'
   | 'license'
   | 'frameTransform'
-  | 'update';
+  | 'update'
+  | 'autoAnimate';
 
 export interface DialogState {
   id: DialogId;
