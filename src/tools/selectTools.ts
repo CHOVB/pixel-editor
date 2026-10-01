@@ -12,7 +12,7 @@ import { combineMasks, rectMask, selectionFromMask, type SelectMode } from '../c
 import type { Point } from '../core/types';
 import { requestRender } from '../editor/renderBus';
 import { tr } from '../i18n';
-import { commitSelection, currentFrameObj } from '../store/actions';
+import { commitSelection, currentEditFrameId } from '../store/actions';
 import { getState } from '../store/editorStore';
 import type { Tool, ToolOverlay, ToolPointer } from './types';
 
@@ -130,8 +130,7 @@ export class WandTool implements Tool {
     const s = getState();
     const p = s.project;
     if (e.x < 0 || e.y < 0 || e.x >= p.width || e.y >= p.height) return;
-    const frame = currentFrameObj();
-    const cel = p.cels[celKey(s.currentLayerId, frame.id)] ?? new Uint8ClampedArray(p.width * p.height * 4);
+    const cel = p.cels[celKey(s.currentLayerId, currentEditFrameId())] ?? new Uint8ClampedArray(p.width * p.height * 4);
     const mask = floodFillMask(cel, p.width, p.height, e.x, e.y, s.fillContiguous, s.fillTolerance);
     applyMask(mask, modeFrom(e), tr('tool.wand'));
     requestRender();

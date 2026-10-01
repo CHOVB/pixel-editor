@@ -1,5 +1,5 @@
 /**
- * 에디터 동작(Actions) 모음
+ * 에디터 동작(Actions) 모음 – 기본
  * ------------------------------------------------------------
  * 버튼/메뉴/단축키가 실행하는 "명령"들입니다.
  * 문서를 바꾸는 명령은 모두 실행 취소(history)에 기록됩니다.
@@ -8,26 +8,35 @@
  *  │ 버튼/메뉴 │ ───────▶ │ actions.ts   │ ─────▶ │ project │
  *  └──────────┘           │ (+ history)  │        └─────────┘
  *                         └──────────────┘ docVersion++ → 화면 갱신
+ *
+ * 기능별 명령 파일
+ *  - actions.ts        기본 (실행 취소, 레이어, 프레임, 태그, 선택, 캔버스, 팔레트)
+ *  - animActions.ts    애니메이션 (키프레임, 링크 셀, 중간 프레임 생성, 색 바꾸기)
+ *  - effectActions.ts  효과
+ *  - boneActions.ts    뼈대
  */
+import { mergeDown, bakeLayer, siblingBelow } from '../core/bake';
 import { luminance } from '../core/color';
-import { diffBuffers, applyPatch, History } from '../core/history';
-import { cloneBuffer, flipHorizontal, flipVertical, setPixel, uniqueColors } from '../core/pixels';
+import { applyPatch, diffBuffers, History } from '../core/history';
 import { getPreset, presetToColors } from '../core/palettes';
+import { cloneBuffer, flipHorizontal, flipVertical, setPixel, uniqueColors } from '../core/pixels';
 import {
   addFrame,
-  addLayer,
+  addLayerAbove,
   addTag,
   celKey,
   duplicateFrame,
   duplicateLayer,
+  editableFrameId,
   ensureCel,
   findLayer,
   flipProject,
-  layerIndex,
-  mergeDown,
+  isEffectivelyLocked,
+  isEffectivelyVisible,
   moveFrame,
-  moveLayer,
+  moveLayerAmongSiblings,
   nextLayerName,
+  placeLayer,
   removeFrame,
   removeLayer,
   removeTag,
@@ -40,11 +49,11 @@ import {
   type StructureSnapshot,
 } from '../core/project';
 import { fullMask, invertMask, selectionFromMask } from '../core/selection';
-import type { Color, Frame, Layer, Project, Selection, Tag } from '../core/types';
-import { markEdited } from '../editor/celVersions';
+import type { BlendMode, Color, Frame, Layer, LayerKind, Project, Selection, Tag } from '../core/types';
+import { markEdited } from '../core/versions';
 import { requestRender } from '../editor/renderBus';
 import { tr } from '../i18n';
-import { getState as S, setState, type Toast } from './editorStore';
+import { getState as S, setState, type ContextMenuEntry, type Toast } from './editorStore';
 
 /** 실행 취소 기록 (앱 전체에서 하나) */
 export const history = new History(300);
@@ -60,6 +69,11 @@ export function notify(message: string, kind: Toast['kind'] = 'info'): void {
   setState({ toast: { id: toastCounter, message, kind } });
 }
 
+/** 마우스 위치에 오른쪽 클릭 메뉴 열기 */
+export function openContextMenu(x: number, y: number, items: ContextMenuEntry[]): void {
+  setState({ contextMenu: { x, y, items } });
+}
+
 export function currentFrameObj(): Frame {
   const s = S();
   return s.project.frames[Math.min(s.currentFrame, s.project.frames.length - 1)];
@@ -70,17 +84,25 @@ export function currentLayer(): Layer | undefined {
   return findLayer(s.project, s.currentLayerId);
 }
 
+/** 그리기 도구가 편집할 셀의 프레임 id (움직이는 레이어가 앞 그림을 쓰는 중이면 그 원본) */
+export function currentEditFrameId(): string {
+  const s = S();
+  const layer = currentLayer();
+  if (!layer) return currentFrameObj().id;
+  return editableFrameId(s.project, layer, Math.min(s.currentFrame, s.project.frames.length - 1));
+}
+
 /** 문서가 바뀌었다고 알립니다. (화면 갱신 + 저장 안 됨 표시) */
 export function touch(markDirty = true): void {
   setState((s) => ({ docVersion: s.docVersion + 1, dirty: markDirty ? true : s.dirty }));
 }
 
-function clamp(v: number, min: number, max: number): number {
+export function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));
 }
 
 /** 실행 취소 때 함께 되돌릴 "화면 상태" */
-interface UiSnapshot {
+export interface UiSnapshot {
   layerId: string;
   frame: number;
   selection: Selection | null;
@@ -92,11 +114,13 @@ function uiSnapshot(): UiSnapshot {
 }
 
 function applyUi(ui: UiSnapshot): void {
-  const p = S().project;
+  const s = S();
+  const p = s.project;
   const layerId = p.layers.some((l) => l.id === ui.layerId) ? ui.layerId : p.layers[p.layers.length - 1].id;
   const frame = clamp(ui.frame, 0, p.frames.length - 1);
   const selection = ui.selection && ui.selection.mask.length === p.width * p.height ? ui.selection : null;
-  setState({ currentLayerId: layerId, currentFrame: frame, selection, frameRange: null });
+  const selectedBoneId = p.bones.some((b) => b.id === s.selectedBoneId) ? s.selectedBoneId : null;
+  setState({ currentLayerId: layerId, currentFrame: frame, selection, frameRange: null, selectedBoneId });
 }
 
 /* ================================================================== */
@@ -138,13 +162,14 @@ export function endStructureEdit(label: string, token: StructureEditToken, uiAft
  * mutate 함수가 false 를 돌려주면 "변경 없음"으로 보고 기록하지 않습니다.
  * mutate 가 객체를 돌려주면 작업 후 선택할 레이어/프레임으로 사용합니다.
  */
-export function commitStructure(
-  label: string,
-  mutate: (p: Project) => boolean | void | Partial<UiSnapshot>,
-): boolean {
+export function commitStructure(label: string, mutate: (p: Project) => boolean | void | Partial<UiSnapshot>): boolean {
   const token = beginStructureEdit();
   const result = mutate(S().project);
-  if (result === false) return false;
+  if (result === false) {
+    // 변경이 없었다고 했지만 혹시 바뀐 부분이 있으면 되돌립니다.
+    restoreStructure(S().project, token.before);
+    return false;
+  }
   endStructureEdit(label, token, typeof result === 'object' ? result : undefined);
   return true;
 }
@@ -168,10 +193,7 @@ export function commitPixels(
   const selChanged = !!sel && sel.before !== sel.after;
   if (!patch && !selChanged) return false;
   const focus = () => {
-    const frameIndex = p.frames.findIndex((f) => f.id === frameId);
-    if (frameIndex >= 0 && p.layers.some((l) => l.id === layerId)) {
-      setState({ currentLayerId: layerId, currentFrame: frameIndex });
-    }
+    if (p.layers.some((l) => l.id === layerId)) setState({ currentLayerId: layerId });
   };
   if (patch) markEdited(cel);
   history.push({
@@ -231,15 +253,17 @@ export function redo(): void {
 /** 새 프로젝트로 통째로 바꿉니다. (실행 취소 기록은 초기화) */
 export function replaceProject(project: Project, fileName: string | null): void {
   history.clear();
+  const top = [...project.layers].reverse().find((l) => l.kind === 'pixel') ?? project.layers[project.layers.length - 1];
   setState((s) => ({
     project,
     docVersion: s.docVersion + 1,
-    currentLayerId: project.layers[project.layers.length - 1].id,
+    currentLayerId: top.id,
     currentFrame: 0,
     frameRange: null,
     selection: null,
     playing: false,
     activeTagId: null,
+    selectedBoneId: null,
     fileName,
     dirty: false,
     fitRequest: s.fitRequest + 1,
@@ -267,11 +291,30 @@ export function selectLayer(layerId: string): void {
   setState({ currentLayerId: layerId });
 }
 
-export function addLayerAction(): void {
-  commitStructure(tr('history.addLayer'), (p) => {
-    const idx = layerIndex(p, S().currentLayerId);
-    const layer = addLayer(p, idx + 1, nextLayerName(p, tr('layer.defaultName')));
+function addKindLayer(kind: LayerKind, label: string, name: string, configure?: (l: Layer) => void): void {
+  commitStructure(label, (p) => {
+    const layer = addLayerAbove(p, S().currentLayerId, name, kind);
+    configure?.(layer);
     return { layerId: layer.id };
+  });
+}
+
+export function addLayerAction(): void {
+  const p = S().project;
+  addKindLayer('pixel', tr('history.addLayer'), nextLayerName(p, tr('layer.defaultName')));
+}
+
+export function addGroupAction(): void {
+  const p = S().project;
+  addKindLayer('group', tr('history.addGroup'), nextLayerName(p, tr('layer.groupName')));
+}
+
+/** 밑그림(스케치) 레이어: 내보내기에서 빠지고, 반투명하게 보입니다. */
+export function addSketchLayerAction(): void {
+  const p = S().project;
+  addKindLayer('pixel', tr('history.addSketch'), nextLayerName(p, tr('layer.sketchName')), (l) => {
+    l.guide = true;
+    l.opacity = 0.5;
   });
 }
 
@@ -283,41 +326,47 @@ export function duplicateLayerAction(): void {
 }
 
 export function deleteLayerAction(layerId = S().currentLayerId): void {
-  const p = S().project;
-  if (p.layers.length <= 1) {
-    notify(tr('toast.cannotDeleteLastLayer'), 'error');
-    return;
-  }
   commitStructure(tr('history.deleteLayer'), (proj) => {
-    const idx = layerIndex(proj, layerId);
-    if (!removeLayer(proj, layerId)) return false;
-    return { layerId: proj.layers[Math.max(0, idx - 1)].id };
+    const layer = findLayer(proj, layerId);
+    if (!layer) return false;
+    const sibs = proj.layers.filter((l) => l.parentId === layer.parentId);
+    const i = sibs.indexOf(layer);
+    if (!removeLayer(proj, layerId)) {
+      notify(tr('toast.cannotDeleteLastLayer'), 'error');
+      return false;
+    }
+    const next = sibs[i - 1] ?? sibs[i + 1] ?? findLayer(proj, layer.parentId) ?? proj.layers[proj.layers.length - 1];
+    return { layerId: next.id };
   });
 }
 
-/** delta=+1 이면 위로, -1 이면 아래로 */
-export function moveLayerBy(delta: number): void {
-  const p = S().project;
-  const idx = layerIndex(p, S().currentLayerId);
-  const to = idx + delta;
-  if (to < 0 || to >= p.layers.length) return;
-  commitStructure(tr('history.moveLayer'), (proj) => moveLayer(proj, S().currentLayerId, to));
+/** delta=+1 이면 위로, -1 이면 아래로 (같은 그룹 안에서) */
+export function moveLayerBy(delta: 1 | -1): void {
+  commitStructure(tr('history.moveLayer'), (p) => moveLayerAmongSiblings(p, S().currentLayerId, delta));
 }
 
-export function moveLayerTo(layerId: string, toIndex: number): void {
-  commitStructure(tr('history.moveLayer'), (p) => moveLayer(p, layerId, toIndex));
+/** 끌어서 놓기: target 레이어의 위/아래/안(그룹)으로 옮기기 */
+export function placeLayerAction(layerId: string, targetId: string, where: 'above' | 'below' | 'inside'): void {
+  commitStructure(tr('history.moveLayer'), (p) => placeLayer(p, layerId, targetId, where));
 }
 
 export function mergeDownAction(): void {
-  const p = S().project;
-  if (layerIndex(p, S().currentLayerId) <= 0) {
+  const s = S();
+  const layer = currentLayer();
+  if (!layer || !siblingBelow(s.project, layer) || siblingBelow(s.project, layer)?.kind === 'group') {
     notify(tr('toast.noLayerBelow'), 'error');
     return;
   }
   commitStructure(tr('history.mergeDown'), (proj) => {
-    const lower = mergeDown(proj, S().currentLayerId);
+    const lower = mergeDown(proj, s.currentLayerId);
     return lower ? { layerId: lower.id } : false;
   });
+}
+
+/** 움직임/효과/뼈대 결과를 실제 픽셀로 굽기 */
+export function bakeLayerAction(layerId = S().currentLayerId): void {
+  commitStructure(tr('history.bakeLayer'), (p) => bakeLayer(p, layerId));
+  notify(tr('toast.baked'), 'success');
 }
 
 export function toggleLayerVisible(layerId: string): void {
@@ -332,6 +381,29 @@ export function toggleLayerLocked(layerId: string): void {
   if (!layer) return;
   layer.locked = !layer.locked;
   touch();
+}
+
+export function toggleLayerExpanded(layerId: string): void {
+  const layer = findLayer(S().project, layerId);
+  if (!layer) return;
+  layer.expanded = !layer.expanded;
+  touch(false);
+}
+
+export function toggleGuide(layerId = S().currentLayerId): void {
+  commitStructure(tr('history.layerProps'), (p) => {
+    const layer = findLayer(p, layerId);
+    if (!layer || layer.kind === 'group') return false;
+    layer.guide = !layer.guide;
+  });
+}
+
+export function setLayerBlendMode(layerId: string, mode: BlendMode): void {
+  commitStructure(tr('history.layerProps'), (p) => {
+    const layer = findLayer(p, layerId);
+    if (!layer || layer.blendMode === mode) return false;
+    layer.blendMode = mode;
+  });
 }
 
 export function renameLayer(layerId: string, name: string): void {
@@ -393,11 +465,11 @@ export function addFrameAction(): void {
   });
 }
 
-export function duplicateFramesAction(): void {
+export function duplicateFramesAction(linked = S().linkOnDuplicate): void {
   const [a, b] = selectedFrames();
   commitStructure(tr('history.duplicateFrame'), (p) => {
     // 뒤에서부터 복제하면 인덱스가 꼬이지 않습니다. 복제본들은 원본 구간 바로 뒤에 놓입니다.
-    for (let i = b; i >= a; i--) duplicateFrame(p, i);
+    for (let i = b; i >= a; i--) duplicateFrame(p, i, linked);
     // 위 방식은 [원본, 복제] 가 번갈아 놓이므로, 복제본들을 구간 뒤로 모읍니다.
     const count = b - a + 1;
     if (count > 1) {
@@ -524,11 +596,16 @@ export function invertSelection(): void {
 export function canEditCurrentLayer(): boolean {
   const layer = currentLayer();
   if (!layer) return false;
-  if (layer.locked) {
+  const p = S().project;
+  if (layer.kind !== 'pixel') {
+    notify(tr('toast.notPixelLayer'), 'error');
+    return false;
+  }
+  if (isEffectivelyLocked(p, layer)) {
     notify(tr('toast.layerLocked'), 'error');
     return false;
   }
-  if (!layer.visible) {
+  if (!isEffectivelyVisible(p, layer)) {
     notify(tr('toast.layerHidden'), 'error');
     return false;
   }
@@ -540,8 +617,8 @@ export function clearSelectionPixels(label = tr('history.clear')): void {
   if (!canEditCurrentLayer()) return;
   const s = S();
   const p = s.project;
-  const frame = currentFrameObj();
-  const cel = p.cels[celKey(s.currentLayerId, frame.id)];
+  const frameId = currentEditFrameId();
+  const cel = p.cels[celKey(s.currentLayerId, frameId)];
   if (!cel) return;
   const before = cloneBuffer(cel);
   const mask = s.selection?.mask;
@@ -552,7 +629,7 @@ export function clearSelectionPixels(label = tr('history.clear')): void {
     cel[i * 4 + 2] = 0;
     cel[i * 4 + 3] = 0;
   }
-  commitPixels(label, s.currentLayerId, frame.id, before);
+  commitPixels(label, s.currentLayerId, frameId, before);
 }
 
 /** 선택 영역(또는 현재 셀 전체)을 좌우/상하 뒤집기 */
@@ -560,14 +637,14 @@ export function flipSelectionOrCel(axis: 'horizontal' | 'vertical'): void {
   if (!canEditCurrentLayer()) return;
   const s = S();
   const p = s.project;
-  const frame = currentFrameObj();
-  const cel = ensureCel(p, s.currentLayerId, frame.id);
+  const frameId = currentEditFrameId();
+  const cel = ensureCel(p, s.currentLayerId, frameId);
   const before = cloneBuffer(cel);
   const sel = s.selection;
   if (!sel) {
     const flipped = axis === 'horizontal' ? flipHorizontal(cel, p.width, p.height) : flipVertical(cel, p.width, p.height);
     cel.set(flipped);
-    commitPixels(tr('history.flip'), s.currentLayerId, frame.id, before);
+    commitPixels(tr('history.flip'), s.currentLayerId, frameId, before);
     return;
   }
   const { x: bx, y: by, w: bw, h: bh } = sel.bounds;
@@ -588,20 +665,13 @@ export function flipSelectionOrCel(axis: 'horizontal' | 'vertical'): void {
       if (!sel.mask[i]) continue;
       const nx = axis === 'horizontal' ? bx + bw - 1 - (x - bx) : x;
       const ny = axis === 'vertical' ? by + bh - 1 - (y - by) : y;
-      const j = ny * p.width + nx;
-      newMask[j] = 1;
+      newMask[ny * p.width + nx] = 1;
       const si = i * 4;
-      setPixel(
-        cel,
-        p.width,
-        nx,
-        ny,
-        ((before[si] << 24) | (before[si + 1] << 16) | (before[si + 2] << 8) | before[si + 3]) >>> 0,
-      );
+      setPixel(cel, p.width, nx, ny, ((before[si] << 24) | (before[si + 1] << 16) | (before[si + 2] << 8) | before[si + 3]) >>> 0);
     }
   }
   const nextSel = selectionFromMask(newMask, p.width, p.height);
-  commitPixels(tr('history.flip'), s.currentLayerId, frame.id, before, { before: sel, after: nextSel });
+  commitPixels(tr('history.flip'), s.currentLayerId, frameId, before, { before: sel, after: nextSel });
 }
 
 /* ================================================================== */
@@ -666,7 +736,7 @@ export function addColorToPalette(color: Color): void {
     return;
   }
   commitStructure(tr('history.addColor'), (proj) => {
-    proj.palette.push(color);
+    proj.palette = [...proj.palette, color];
   });
   setState({ paletteIndex: S().project.palette.length - 1 });
 }
@@ -675,7 +745,7 @@ export function removePaletteColor(index: number): void {
   if (index < 0) return;
   commitStructure(tr('history.removeColor'), (p) => {
     if (index >= p.palette.length) return false;
-    p.palette.splice(index, 1);
+    p.palette = p.palette.filter((_, i) => i !== index);
   });
   setState({ paletteIndex: -1 });
 }

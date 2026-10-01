@@ -24,13 +24,14 @@ import {
   swapColors,
   undo,
 } from '../store/actions';
+import { gotoNeighborKey, linkCelsAction, openInbetweenDialog, toggleKeyframeAction } from '../store/animActions';
 import { getState, setState, type ToolId } from '../store/editorStore';
 import { moveTool, TOOL_LIST, TOOLS, type ToolInfo } from '../tools';
 import { copySelection, cutSelection } from './clipboard';
 import { confirmDiscard, openFile, saveProject } from './fileActions';
 import { actualSize, fitToScreen, zoomStep } from './view';
 
-export type ShortcutGroup = 'file' | 'edit' | 'tools' | 'view' | 'animation';
+export type ShortcutGroup = 'file' | 'edit' | 'tools' | 'view' | 'animation' | 'helpers';
 
 export interface Shortcut {
   /** 화면에 표시할 키 조합, 예: 'Ctrl+Z' */
@@ -140,6 +141,17 @@ export const SHORTCUTS: Shortcut[] = [
   { label: 'Shift+D', code: 'KeyD', shift: true, group: 'animation', desc: 'menu.duplicateFrame', run: duplicateFramesAction },
   { label: 'Shift+N', code: 'KeyN', shift: true, group: 'animation', desc: 'menu.newLayer', run: addLayerAction },
   { label: 'Ctrl+↑ / Ctrl+↓', code: '', group: 'animation', desc: 'shortcut.moveLayer', run: () => {}, displayOnly: true },
+  { label: 'K', code: 'KeyK', group: 'animation', desc: 'menu.addKey', run: toggleKeyframeAction },
+  { label: 'Shift+,', code: 'Comma', shift: true, group: 'animation', desc: 'timeline.prevKey', run: () => gotoNeighborKey(-1) },
+  { label: 'Shift+.', code: 'Period', shift: true, group: 'animation', desc: 'timeline.nextKey', run: () => gotoNeighborKey(1) },
+  { label: 'Alt+L', code: 'KeyL', alt: true, group: 'animation', desc: 'menu.linkCels', run: linkCelsAction },
+
+  // 도우미 기능
+  { label: 'Shift+I', code: 'KeyI', shift: true, group: 'helpers', desc: 'menu.inbetween', run: openInbetweenDialog },
+  { label: 'Shift+X', code: 'KeyX', shift: true, group: 'helpers', desc: 'menu.vfx', run: () => setState({ dialog: { id: 'vfx' } }) },
+  { label: 'Shift+L', code: 'KeyL', shift: true, group: 'helpers', desc: 'menu.cleanup', run: () => setState({ dialog: { id: 'cleanup' } }) },
+  { label: 'Shift+R', code: 'KeyR', shift: true, group: 'helpers', desc: 'menu.replaceColor', run: () => setState({ dialog: { id: 'replaceColor' } }) },
+  { label: 'Shift+B', code: 'KeyB', shift: true, group: 'helpers', desc: 'bones.show', run: () => setState((s) => ({ showBones: !s.showBones })) },
 ];
 
 function matches(sc: Shortcut, e: KeyboardEvent): boolean {
@@ -188,7 +200,7 @@ export function handleKeyDown(e: KeyboardEvent): boolean {
   };
   if (arrows[e.code]) {
     const [dx, dy] = arrows[e.code];
-    if (ctrl && dy !== 0) moveLayerBy(-dy);
+    if (ctrl && dy !== 0) moveLayerBy(dy < 0 ? 1 : -1);
     else arrow(dx, dy, e.shiftKey);
     return true;
   }

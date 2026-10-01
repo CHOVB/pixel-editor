@@ -30,6 +30,7 @@ export class FreehandTool implements Tool {
   private colorFn: (x: number, y: number) => Color = () => 0;
   private offsets: Point[] = [{ x: 0, y: 0 }];
   private usePixelPerfect = false;
+  readonly layerSpace = true;
 
   constructor(private readonly mode: FreehandMode) {}
 
@@ -90,6 +91,7 @@ export class FreehandTool implements Tool {
   cancel(): void {
     if (this.session) {
       this.session.restore();
+      this.session.changed();
       this.session = null;
       requestRender();
     }
@@ -111,6 +113,6 @@ export class FreehandTool implements Tool {
       }
       this.drawnCount = this.points.length;
     }
-    requestRender();
+    session.changed();
   }
 }

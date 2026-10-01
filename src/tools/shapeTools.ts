@@ -26,6 +26,7 @@ export class ShapeTool implements Tool {
   private session: PixelEditSession | null = null;
   private start: Point = { x: 0, y: 0 };
   private color: Color = 0;
+  readonly layerSpace = true;
 
   constructor(private readonly kind: ShapeKind) {}
 
@@ -54,6 +55,7 @@ export class ShapeTool implements Tool {
   cancel(): void {
     if (this.session) {
       this.session.restore();
+      this.session.changed();
       this.session = null;
       requestRender();
     }
@@ -86,6 +88,6 @@ export class ShapeTool implements Tool {
     // 채워진 도형은 1px 로, 테두리는 브러시 크기로 그립니다.
     const offsets = this.kind !== 'line' && s.shapeFilled ? [{ x: 0, y: 0 }] : brushOffsets(s.brushSize, s.brushShape);
     for (const p of points) session.stamp(p.x, p.y, offsets, this.color);
-    requestRender();
+    session.changed();
   }
 }

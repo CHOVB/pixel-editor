@@ -7,14 +7,15 @@
  *  3) 끝날 때 원본과 비교해서 바뀐 부분만 실행 취소 기록에 넣습니다.
  *
  * 선택 영역이 있으면 그 안에만 그려지고, 대칭 모드면 반대편에도 함께 그려집니다.
+ * 키프레임으로 움직이는 레이어는 "원본 그림"(hold 중인 셀)에 그려집니다.
  */
-import type { Color } from '../core/types';
 import { cloneBuffer, setPixel } from '../core/pixels';
 import { ensureCel } from '../core/project';
-import type { Point } from '../core/types';
-import { canEditCurrentLayer, commitPixels, currentFrameObj } from '../store/actions';
-import { getState } from '../store/editorStore';
+import type { Color, Point } from '../core/types';
+import { markEdited } from '../core/versions';
 import { requestRender } from '../editor/renderBus';
+import { canEditCurrentLayer, commitPixels, currentEditFrameId } from '../store/actions';
+import { getState } from '../store/editorStore';
 
 export class PixelEditSession {
   readonly layerId: string;
@@ -31,7 +32,7 @@ export class PixelEditSession {
     const s = getState();
     const p = s.project;
     this.layerId = s.currentLayerId;
-    this.frameId = currentFrameObj().id;
+    this.frameId = currentEditFrameId();
     this.width = p.width;
     this.height = p.height;
     this.cel = ensureCel(p, this.layerId, this.frameId);
@@ -41,7 +42,7 @@ export class PixelEditSession {
     this.symY = s.symmetryY;
   }
 
-  /** 편집을 시작합니다. 잠긴/숨긴 레이어면 null 을 돌려줍니다. */
+  /** 편집을 시작합니다. 잠긴/숨긴/그림이 아닌 레이어면 null 을 돌려줍니다. */
   static start(): PixelEditSession | null {
     if (!canEditCurrentLayer()) return null;
     return new PixelEditSession();
@@ -73,6 +74,12 @@ export class PixelEditSession {
   /** 브러시 모양(offsets)으로 한 점 찍기 */
   stamp(x: number, y: number, offsets: Point[], color: Color | ((x: number, y: number) => Color)): void {
     for (const o of offsets) this.plotSym(x + o.x, y + o.y, color);
+  }
+
+  /** 픽셀이 바뀌었음을 알리고 화면을 다시 그립니다. (효과/변형 캐시도 갱신됨) */
+  changed(): void {
+    markEdited(this.cel);
+    requestRender();
   }
 
   /** 편집을 마치고 실행 취소 기록에 넣습니다. */

@@ -10,10 +10,12 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "codex-bridge": "node bridge/codex-bridge.mjs"
   },
   "dependencies": {
     "gifenc": "^1.0.3",
+    "gifuct-js": "^2.1.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "zustand": "^5.0.15"

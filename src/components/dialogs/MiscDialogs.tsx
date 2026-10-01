@@ -26,7 +26,7 @@ import { closeDialog, Modal } from './Modal';
 
 /* ------------------------------------------------------------------ */
 
-const GROUPS: ShortcutGroup[] = ['tools', 'edit', 'animation', 'view', 'file'];
+const GROUPS: ShortcutGroup[] = ['tools', 'edit', 'animation', 'helpers', 'view', 'file'];
 
 export function ShortcutsDialog() {
   const t = useT();

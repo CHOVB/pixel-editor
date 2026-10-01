@@ -11,9 +11,9 @@
  */
 import { create } from 'zustand';
 import { packColor } from '../core/color';
+import type { BrushShape } from '../core/drawing';
 import { DEFAULT_PALETTE_ID, getPreset, presetToColors } from '../core/palettes';
 import { createProject } from '../core/project';
-import type { BrushShape } from '../core/drawing';
 import type { Color, Point, Project, Selection } from '../core/types';
 import { en } from '../i18n/en';
 import { ko } from '../i18n/ko';
@@ -32,10 +32,15 @@ export type ToolId =
   | 'wand'
   | 'move'
   | 'hand'
-  | 'dither';
+  | 'dither'
+  | 'transform'
+  | 'bone'
+  | 'pose';
 
 export type Lang = 'ko' | 'en';
 export type LoopMode = 'loop' | 'pingpong' | 'once';
+export type TileMode = 'none' | 'x' | 'y' | 'both';
+export type Theme = 'dark' | 'light' | 'system';
 
 export type DialogId =
   | 'welcome'
@@ -48,7 +53,19 @@ export type DialogId =
   | 'frameDuration'
   | 'layerProps'
   | 'tag'
-  | 'confirm';
+  | 'confirm'
+  | 'importSheet'
+  | 'inbetween'
+  | 'replaceColor'
+  | 'pixelFixer'
+  | 'codex'
+  | 'partFill'
+  | 'vfx'
+  | 'cleanup'
+  | 'settings'
+  | 'tutorial'
+  | 'license'
+  | 'crash';
 
 export interface DialogState {
   id: DialogId;
@@ -64,12 +81,33 @@ export interface OnionSettings {
   opacity: number;
   /** 이전=빨강, 다음=파랑 색조 입히기 */
   tint: boolean;
+  /** 처음/끝을 이어서 보기 (반복 애니메이션용) */
+  wrap: boolean;
+  /** 항상 함께 보여줄 기준 프레임 (null = 없음) */
+  pinnedFrameId: string | null;
 }
 
 export interface Toast {
   id: number;
   message: string;
   kind: 'info' | 'success' | 'error';
+}
+
+export type ContextMenuEntry =
+  | {
+      label: string;
+      run: () => void;
+      disabled?: boolean;
+      danger?: boolean;
+      checked?: boolean;
+      shortcut?: string;
+    }
+  | 'sep';
+
+export interface ContextMenuState {
+  x: number;
+  y: number;
+  items: ContextMenuEntry[];
 }
 
 export interface EditorState {
@@ -107,6 +145,10 @@ export interface EditorState {
   showGrid: boolean;
   showTileGrid: boolean;
   tileSize: number;
+  /** 반복 타일 미리보기 */
+  tileMode: TileMode;
+  /** 아래쪽(타임라인) 영역 높이 */
+  bottomHeight: number;
 
   /* ---------- 애니메이션 ---------- */
   playing: boolean;
@@ -114,13 +156,25 @@ export interface EditorState {
   /** 재생할 태그 (null 이면 전체 프레임) */
   activeTagId: string | null;
   onion: OnionSettings;
+  /** 프레임 복제 시 그림을 공유(링크)할지 */
+  linkOnDuplicate: boolean;
+
+  /* ---------- 뼈대 ---------- */
+  selectedBoneId: string | null;
+  showBones: boolean;
+  /** 자세 도구에서 IK(끝을 끌면 팔 전체가 따라옴) 사용 */
+  ikEnabled: boolean;
+  ikChain: number;
 
   /* ---------- 파일 / UI ---------- */
   fileName: string | null;
   dirty: boolean;
   language: Lang;
+  theme: Theme;
+  uiScale: number;
   dialog: DialogState | null;
   toast: Toast | null;
+  contextMenu: ContextMenuState | null;
   /** 마우스가 가리키는 픽셀 좌표 (상태바 표시용) */
   cursor: Point | null;
   paletteId: string;
@@ -130,7 +184,7 @@ export interface EditorState {
   collapsed: Record<string, boolean>;
 }
 
-const COLLAPSE_KEY = 'pixel-editor:collapsed:v1';
+const COLLAPSE_KEY = 'pixel-editor:collapsed:v2';
 
 /** 접힘 상태 불러오기. 저장된 값이 없으면 화면이 낮을 때 색 선택기를 접어 둡니다. */
 function loadCollapsed(): Record<string, boolean> {
@@ -140,7 +194,8 @@ function loadCollapsed(): Record<string, boolean> {
   } catch {
     // 무시하고 기본값 사용
   }
-  return { color: typeof window !== 'undefined' && window.innerHeight < 900 };
+  const short = typeof window !== 'undefined' && window.innerHeight < 900;
+  return { color: short, effects: true, bones: true, animation: false };
 }
 
 export function saveCollapsed(collapsed: Record<string, boolean>): void {
@@ -161,6 +216,8 @@ const initialProject = createProject(32, 32, {
   palette: initialPalette,
   layerName: `${dict['layer.defaultName']} 1`,
 });
+
+const defaultOnion: OnionSettings = { enabled: false, before: 1, after: 1, opacity: 0.35, tint: true, wrap: false, pinnedFrameId: null };
 
 export const useEditor = create<EditorState>(() => ({
   project: initialProject,
@@ -190,17 +247,28 @@ export const useEditor = create<EditorState>(() => ({
   showGrid: prefs.showGrid ?? true,
   showTileGrid: prefs.showTileGrid ?? false,
   tileSize: prefs.tileSize ?? 16,
+  tileMode: 'none',
+  bottomHeight: prefs.bottomHeight ?? 210,
 
   playing: false,
   loopMode: 'loop',
   activeTagId: null,
-  onion: prefs.onion ?? { enabled: false, before: 1, after: 1, opacity: 0.35, tint: true },
+  onion: { ...defaultOnion, ...(prefs.onion ?? {}), pinnedFrameId: null },
+  linkOnDuplicate: prefs.linkOnDuplicate ?? false,
+
+  selectedBoneId: null,
+  showBones: true,
+  ikEnabled: true,
+  ikChain: 2,
 
   fileName: null,
   dirty: false,
   language: initialLanguage,
+  theme: prefs.theme ?? 'dark',
+  uiScale: prefs.uiScale ?? 1,
   dialog: { id: 'welcome' },
   toast: null,
+  contextMenu: null,
   cursor: null,
   paletteId: prefs.paletteId ?? DEFAULT_PALETTE_ID,
   paletteIndex: -1,

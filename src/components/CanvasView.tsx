@@ -2,34 +2,42 @@
  * 캔버스 화면 (그림을 그리는 메인 영역)
  * ------------------------------------------------------------
  * 하는 일
- *  1) 그림을 확대해서 보여주기 (체크무늬 배경, 어니언 스킨, 격자, 선택 영역 점선)
+ *  1) 그림을 확대해서 보여주기
+ *     체크무늬 배경 → (뒤) 밑그림 이미지 → 어니언 스킨 → 현재 프레임 → (앞) 밑그림 이미지
+ *     → 타일 반복 미리보기 → 격자 → 선택 영역 점선 → 뼈대 → 도구 미리보기
  *  2) 마우스/펜 입력을 "픽셀 좌표"로 바꿔서 현재 도구에 전달하기
+ *     (움직인 레이어에 그릴 때는 원본 좌표로 되돌려서 전달)
  *  3) 휠 = 확대/축소, 스페이스바+드래그 / 가운데 버튼 = 화면 이동
  *
  * 성능을 위해 React 렌더링과 별개로 requestAnimationFrame 루프에서 직접 그립니다.
  * "다시 그려야 함(dirty)" 표시가 있을 때만 실제로 그립니다.
  */
 import { useEffect, useRef, useState } from 'react';
+import { apply, invert, isIdentity } from '../core/affine';
 import { colorToCss } from '../core/color';
 import { brushOffsets } from '../core/drawing';
+import { layerMatrix } from '../core/layerSpace';
 import { compositeFrame } from '../core/render';
 import { maskOutline, type Segment } from '../core/selection';
-import type { Selection } from '../core/types';
-import { onRenderRequest } from '../editor/renderBus';
+import { boneEndpoints, poseWorld } from '../core/skeleton';
+import type { Layer, Project, Selection } from '../core/types';
+import { onRenderRequest, requestRender } from '../editor/renderBus';
 import { fitToScreen, panBy, screenToPixel, setViewportSize, zoomStep } from '../editor/view';
 import { getState, setState, useEditor, type ToolId } from '../store/editorStore';
-import { TOOLS, usesBrush } from '../tools';
+import { showsBones, TOOLS, usesBrush } from '../tools';
 import type { Tool, ToolPointer } from '../tools/types';
 import { createCheckerTile } from '../platform/canvas';
 
-const WORKSPACE_BG = '#15161b';
+const WORKSPACE_BG_VAR = '--canvas-bg';
 const ONION_PREV_TINT = 'rgba(255, 70, 110, 0.55)';
 const ONION_NEXT_TINT = 'rgba(70, 170, 255, 0.55)';
+const ONION_PIN_TINT = 'rgba(90, 220, 120, 0.55)';
 
 function cursorFor(tool: ToolId, panning: boolean, spaceHeld: boolean): string {
   if (panning) return 'grabbing';
   if (spaceHeld || tool === 'hand') return 'grab';
   if (tool === 'move') return 'move';
+  if (tool === 'transform' || tool === 'pose') return 'default';
   return 'crosshair';
 }
 
@@ -40,6 +48,32 @@ function putBuffer(canvas: HTMLCanvasElement, buf: Uint8ClampedArray, w: number,
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
   ctx.putImageData(new ImageData(buf as Uint8ClampedArray<ArrayBuffer>, w, h), 0, 0);
+}
+
+/* ------------------------------------------------------------------ */
+/* 밑그림(레퍼런스) 이미지 캐시                                            */
+/* ------------------------------------------------------------------ */
+
+const refImages = new Map<string, ImageBitmap | 'loading' | 'error'>();
+
+function referenceImage(p: Project, assetId: string): ImageBitmap | null {
+  const cached = refImages.get(assetId);
+  if (cached && cached !== 'loading' && cached !== 'error') return cached;
+  if (cached) return null;
+  const asset = p.assets[assetId];
+  if (!asset) return null;
+  refImages.set(assetId, 'loading');
+  createImageBitmap(new Blob([asset.data as BlobPart], { type: asset.mime }))
+    .then((bmp) => {
+      refImages.set(assetId, bmp);
+      requestRender();
+    })
+    .catch(() => refImages.set(assetId, 'error'));
+  return null;
+}
+
+function visibleReferences(p: Project, front: boolean): Layer[] {
+  return p.layers.filter((l) => l.kind === 'reference' && l.visible && l.reference && l.reference.front === front);
 }
 
 export function CanvasView() {
@@ -66,6 +100,7 @@ export function CanvasView() {
     };
     const up = (e: KeyboardEvent) => {
       if (e.code === 'Space') {
+        if (spaceRef.current) e.preventDefault();
         spaceRef.current = false;
         setSpaceHeld(false);
       }
@@ -104,8 +139,8 @@ export function CanvasView() {
     let wheelAcc = 0;
 
     const spriteCanvas = document.createElement('canvas');
-    const checkerTile = createCheckerTile(8, '#3a3b45', '#2e2f38');
-    const checker = ctx.createPattern(checkerTile, 'repeat');
+    let checker: CanvasPattern | null = null;
+    let checkerTheme = '';
     let outlineCache: { sel: Selection; segs: Segment[] } | null = null;
     const onionCache = new Map<string, HTMLCanvasElement>();
     let onionCacheVersion = -1;
@@ -129,6 +164,8 @@ export function CanvasView() {
     const ro = new ResizeObserver(resize);
     ro.observe(wrap);
     resize();
+
+    const cssVar = (name: string, fallback: string) => getComputedStyle(wrap).getPropertyValue(name).trim() || fallback;
 
     /** 어니언 스킨용 프레임 이미지 (색조 입힘, 문서 버전별 캐시) */
     const onionImage = (frameIndex: number, tint: string | null): HTMLCanvasElement => {
@@ -155,6 +192,20 @@ export function CanvasView() {
       return c;
     };
 
+    const drawReferences = (p: Project, front: boolean, ox: number, oy: number, z: number) => {
+      for (const layer of visibleReferences(p, front)) {
+        const ref = layer.reference;
+        if (!ref) continue;
+        const img = referenceImage(p, ref.assetId);
+        if (!img) continue;
+        ctx.save();
+        ctx.globalAlpha = layer.opacity;
+        ctx.imageSmoothingEnabled = ref.scale * z < 2;
+        ctx.drawImage(img, ox + ref.x * z, oy + ref.y * z, img.width * ref.scale * z, img.height * ref.scale * z);
+        ctx.restore();
+      }
+    };
+
     const draw = () => {
       const s = getState();
       const p = s.project;
@@ -167,10 +218,16 @@ export function CanvasView() {
       const sw = p.width * z;
       const sh = p.height * z;
 
+      const themeKey = cssVar('--checker-a', '#3a3b45') + cssVar('--checker-b', '#2e2f38');
+      if (!checker || themeKey !== checkerTheme) {
+        checker = ctx.createPattern(createCheckerTile(8, cssVar('--checker-a', '#3a3b45'), cssVar('--checker-b', '#2e2f38')), 'repeat');
+        checkerTheme = themeKey;
+      }
+
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = false;
       ctx.globalAlpha = 1;
-      ctx.fillStyle = WORKSPACE_BG;
+      ctx.fillStyle = cssVar(WORKSPACE_BG_VAR, '#15161b');
       ctx.fillRect(0, 0, vw, vh);
 
       // 그림자 + 체크무늬(투명) 배경
@@ -184,22 +241,54 @@ export function CanvasView() {
         ctx.restore();
       }
 
+      // 밑그림 이미지 (그림 뒤)
+      drawReferences(p, false, ox, oy, z);
+
       // 어니언 스킨 (재생 중에는 숨김)
       if (s.onion.enabled && !s.playing && p.frames.length > 1) {
-        const drawOnion = (fi: number, distance: number, count: number, tint: string) => {
-          if (fi < 0 || fi >= p.frames.length) return;
-          const falloff = 1 - ((distance - 1) / Math.max(1, count)) * 0.6;
+        const count = p.frames.length;
+        const drawOnion = (offset: number, total: number, tint: string) => {
+          let fi = s.currentFrame + offset;
+          if (s.onion.wrap) fi = ((fi % count) + count) % count;
+          if (fi < 0 || fi >= count || fi === s.currentFrame) return;
+          const distance = Math.abs(offset);
+          const falloff = 1 - ((distance - 1) / Math.max(1, total)) * 0.6;
           ctx.globalAlpha = s.onion.opacity * falloff;
           ctx.drawImage(onionImage(fi, s.onion.tint ? tint : null), ox, oy, sw, sh);
         };
-        for (let k = s.onion.before; k >= 1; k--) drawOnion(s.currentFrame - k, k, s.onion.before, ONION_PREV_TINT);
-        for (let k = s.onion.after; k >= 1; k--) drawOnion(s.currentFrame + k, k, s.onion.after, ONION_NEXT_TINT);
+        for (let k = s.onion.before; k >= 1; k--) drawOnion(-k, s.onion.before, ONION_PREV_TINT);
+        for (let k = s.onion.after; k >= 1; k--) drawOnion(k, s.onion.after, ONION_NEXT_TINT);
+        if (s.onion.pinnedFrameId) {
+          const pi = p.frames.findIndex((f) => f.id === s.onion.pinnedFrameId);
+          if (pi >= 0 && pi !== s.currentFrame) {
+            ctx.globalAlpha = s.onion.opacity;
+            ctx.drawImage(onionImage(pi, s.onion.tint ? ONION_PIN_TINT : null), ox, oy, sw, sh);
+          }
+        }
         ctx.globalAlpha = 1;
       }
 
-      // 현재 프레임 합성 이미지
-      putBuffer(spriteCanvas, compositeFrame(p, s.currentFrame), p.width, p.height);
+      // 현재 프레임 합성 이미지 (밑그림 스케치 레이어 포함)
+      putBuffer(spriteCanvas, compositeFrame(p, s.currentFrame, { includeGuides: true }), p.width, p.height);
+
+      // 타일 반복 미리보기
+      if (s.tileMode !== 'none') {
+        ctx.save();
+        ctx.globalAlpha = 0.55;
+        const xs = s.tileMode === 'y' ? [0] : [-1, 0, 1];
+        const ys = s.tileMode === 'x' ? [0] : [-1, 0, 1];
+        for (const ty of ys) {
+          for (const tx of xs) {
+            if (tx === 0 && ty === 0) continue;
+            ctx.drawImage(spriteCanvas, ox + tx * sw, oy + ty * sh, sw, sh);
+          }
+        }
+        ctx.restore();
+      }
       ctx.drawImage(spriteCanvas, ox, oy, sw, sh);
+
+      // 밑그림 이미지 (그림 앞)
+      drawReferences(p, true, ox, oy, z);
 
       // 보이는 영역의 픽셀 범위 (격자를 화면에 보이는 곳만 그리기 위해)
       const x0 = Math.max(0, Math.floor(-ox / z));
@@ -283,15 +372,53 @@ export function CanvasView() {
         ctx.setLineDash([]);
       }
 
-      // 도구 미리보기 (선택 사각형, 올가미 경로)
+      // 뼈대
+      if (p.bones.length > 0 && (s.showBones || showsBones(s.tool))) {
+        const world = poseWorld(p, s.currentFrame);
+        ctx.save();
+        for (const b of p.bones) {
+          const m = world.get(b.id);
+          if (!m) continue;
+          const { head, tail } = boneEndpoints(m, b);
+          const hx = ox + head.x * z;
+          const hy = oy + head.y * z;
+          const tx = ox + tail.x * z;
+          const ty = oy + tail.y * z;
+          const len = Math.hypot(tx - hx, ty - hy) || 1;
+          const nx = -(ty - hy) / len;
+          const ny = (tx - hx) / len;
+          const wdt = Math.max(3, Math.min(10, len * 0.12));
+          const mx = hx + (tx - hx) * 0.2;
+          const my = hy + (ty - hy) * 0.2;
+          const selected = b.id === s.selectedBoneId;
+          ctx.beginPath();
+          ctx.moveTo(hx, hy);
+          ctx.lineTo(mx + nx * wdt, my + ny * wdt);
+          ctx.lineTo(tx, ty);
+          ctx.lineTo(mx - nx * wdt, my - ny * wdt);
+          ctx.closePath();
+          ctx.fillStyle = selected ? 'rgba(255,255,255,0.55)' : `${b.color}66`;
+          ctx.strokeStyle = selected ? '#ffffff' : b.color;
+          ctx.lineWidth = selected ? 2 : 1.25;
+          ctx.fill();
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(hx, hy, Math.max(2.5, wdt * 0.45), 0, Math.PI * 2);
+          ctx.fillStyle = selected ? '#ffffff' : b.color;
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      // 도구 미리보기 (선택 사각형, 올가미 경로, 변형 상자, 뼈 그리기)
       const overlay = TOOLS[s.tool].overlay?.();
       if (overlay) {
         ctx.save();
-        ctx.setLineDash([4, 4]);
-        ctx.lineDashOffset = -antsPhase;
-        ctx.strokeStyle = '#fff';
         ctx.lineWidth = 1;
         if (overlay.kind === 'rect') {
+          ctx.setLineDash([4, 4]);
+          ctx.lineDashOffset = -antsPhase;
+          ctx.strokeStyle = '#fff';
           const left = Math.min(overlay.x0, overlay.x1);
           const top = Math.min(overlay.y0, overlay.y1);
           const w = Math.abs(overlay.x1 - overlay.x0) + 1;
@@ -299,7 +426,10 @@ export function CanvasView() {
           ctx.fillStyle = 'rgba(108, 140, 255, 0.15)';
           ctx.fillRect(ox + left * z, oy + top * z, w * z, h * z);
           ctx.strokeRect(ox + left * z + 0.5, oy + top * z + 0.5, w * z, h * z);
-        } else if (overlay.points.length > 0) {
+        } else if (overlay.kind === 'path' && overlay.points.length > 0) {
+          ctx.setLineDash([4, 4]);
+          ctx.lineDashOffset = -antsPhase;
+          ctx.strokeStyle = '#fff';
           ctx.beginPath();
           overlay.points.forEach((pt, i) => {
             const px = ox + (pt.x + 0.5) * z;
@@ -309,14 +439,63 @@ export function CanvasView() {
           });
           ctx.closePath();
           ctx.stroke();
+        } else if (overlay.kind === 'transform') {
+          const pts = overlay.corners.map((c) => ({ x: ox + c.x * z, y: oy + c.y * z }));
+          ctx.strokeStyle = '#6c8cff';
+          ctx.lineWidth = overlay.active === 'move' ? 2 : 1.25;
+          ctx.beginPath();
+          pts.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+          ctx.closePath();
+          ctx.stroke();
+          // 모서리 손잡이 (크기)
+          for (const pt of pts) {
+            ctx.fillStyle = overlay.active === 'scale' ? '#6c8cff' : '#ffffff';
+            ctx.fillRect(pt.x - 4, pt.y - 4, 8, 8);
+            ctx.strokeStyle = '#2b3a8f';
+            ctx.strokeRect(pt.x - 4 + 0.5, pt.y - 4 + 0.5, 7, 7);
+          }
+          // 회전 손잡이
+          const topMid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+          const rh = { x: ox + overlay.rotateHandle.x * z, y: oy + overlay.rotateHandle.y * z };
+          ctx.strokeStyle = '#6c8cff';
+          ctx.beginPath();
+          ctx.moveTo(topMid.x, topMid.y);
+          ctx.lineTo(rh.x, rh.y);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(rh.x, rh.y, 6, 0, Math.PI * 2);
+          ctx.fillStyle = overlay.active === 'rotate' ? '#6c8cff' : '#ffffff';
+          ctx.fill();
+          ctx.stroke();
+          // 중심점
+          const pv = { x: ox + overlay.pivot.x * z, y: oy + overlay.pivot.y * z };
+          ctx.strokeStyle = overlay.active === 'pivot' ? '#ffd166' : '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(pv.x, pv.y, 5, 0, Math.PI * 2);
+          ctx.moveTo(pv.x - 9, pv.y);
+          ctx.lineTo(pv.x + 9, pv.y);
+          ctx.moveTo(pv.x, pv.y - 9);
+          ctx.lineTo(pv.x, pv.y + 9);
+          ctx.stroke();
+        } else if (overlay.kind === 'boneDraft') {
+          ctx.strokeStyle = '#ffd166';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([5, 3]);
+          ctx.beginPath();
+          ctx.moveTo(ox + overlay.from.x * z, oy + overlay.from.y * z);
+          ctx.lineTo(ox + overlay.to.x * z, oy + overlay.to.y * z);
+          ctx.stroke();
         }
         ctx.restore();
       }
 
       // 브러시 커서 (어디에 칠해질지 미리 보여주기)
-      if (hover && !drag && !spaceRef.current && s.tool !== 'hand' && s.tool !== 'move') {
+      const noCursorTools: ToolId[] = ['hand', 'move', 'transform', 'bone', 'pose'];
+      if (hover && !drag && !spaceRef.current && !noCursorTools.includes(s.tool)) {
         const offsets = usesBrush(s.tool) ? brushOffsets(s.brushSize, s.brushShape) : [{ x: 0, y: 0 }];
-        const fill = s.tool === 'eraser' ? null : s.tool === 'pencil' || s.tool === 'dither' || s.tool === 'line' || s.tool === 'rect' || s.tool === 'ellipse' ? colorToCss(s.primary) : null;
+        const fill =
+          s.tool === 'pencil' || s.tool === 'dither' || s.tool === 'line' || s.tool === 'rect' || s.tool === 'ellipse' ? colorToCss(s.primary) : null;
         ctx.save();
         if (fill) {
           ctx.globalAlpha = 0.6;
@@ -333,12 +512,7 @@ export function CanvasView() {
           const minY = Math.min(...offsets.map((o) => o.y));
           const maxX = Math.max(...offsets.map((o) => o.x));
           const maxY = Math.max(...offsets.map((o) => o.y));
-          ctx.strokeRect(
-            ox + (hover.x + minX) * z + 0.5,
-            oy + (hover.y + minY) * z + 0.5,
-            (maxX - minX + 1) * z - 1,
-            (maxY - minY + 1) * z - 1,
-          );
+          ctx.strokeRect(ox + (hover.x + minX) * z + 0.5, oy + (hover.y + minY) * z + 0.5, (maxX - minX + 1) * z - 1, (maxY - minY + 1) * z - 1);
         }
         ctx.restore();
       }
@@ -346,7 +520,7 @@ export function CanvasView() {
 
     const loop = (t: number) => {
       const s = getState();
-      const animating = !!s.selection || !!TOOLS[s.tool].overlay?.();
+      const animating = !!s.selection || TOOLS[s.tool].overlay?.()?.kind === 'rect' || TOOLS[s.tool].overlay?.()?.kind === 'path';
       if (animating && t - lastAnts > 120) {
         antsPhase = (antsPhase + 1) % 8;
         lastAnts = t;
@@ -362,12 +536,24 @@ export function CanvasView() {
 
     /* ---------------- 입력 처리 ---------------- */
 
-    const toPointer = (e: PointerEvent | MouseEvent, button: number): ToolPointer => {
+    const toPointer = (e: PointerEvent | MouseEvent, button: number, forTool?: Tool): ToolPointer => {
       const r = canvas.getBoundingClientRect();
-      const px = screenToPixel(e.clientX - r.left, e.clientY - r.top);
+      const s = getState();
+      let px = screenToPixel(e.clientX - r.left, e.clientY - r.top);
+      // 움직인 레이어에 그릴 때: 보이는 위치 → 원본 위치로 되돌리기
+      if (forTool?.layerSpace) {
+        const layer = s.project.layers.find((l) => l.id === s.currentLayerId);
+        if (layer) {
+          const m = layerMatrix(s.project, layer, s.currentFrame);
+          if (!isIdentity(m)) px = apply(invert(m), px.x, px.y);
+        }
+      }
       return {
         x: Math.floor(px.x),
         y: Math.floor(px.y),
+        fx: px.x,
+        fy: px.y,
+        zoom: s.zoom,
         button,
         shift: e.shiftKey,
         ctrl: e.ctrlKey || e.metaKey,
@@ -385,6 +571,7 @@ export function CanvasView() {
         dirty = true;
         setState({ cursor: next });
       }
+      if (!drag) TOOLS[getState().tool].hover?.(pt);
     };
 
     const onPointerDown = (e: PointerEvent) => {
@@ -392,6 +579,7 @@ export function CanvasView() {
       e.preventDefault();
       (document.activeElement as HTMLElement | null)?.blur?.();
       const s = getState();
+      if (s.contextMenu) setState({ contextMenu: null });
       if (e.button === 1 || spaceRef.current || s.tool === 'hand') {
         drag = { mode: 'pan', lastX: e.clientX, lastY: e.clientY, pointerId: e.pointerId };
         setPanning(true);
@@ -400,7 +588,7 @@ export function CanvasView() {
         const tool = TOOLS[s.tool];
         const button = e.button;
         drag = { mode: 'tool', tool, button, pointerId: e.pointerId };
-        tool.begin(toPointer(e, button));
+        tool.begin(toPointer(e, button, tool));
       } else {
         return;
       }
@@ -416,13 +604,13 @@ export function CanvasView() {
         drag.lastX = e.clientX;
         drag.lastY = e.clientY;
       } else {
-        drag.tool.move(toPointer(e, drag.button));
+        drag.tool.move(toPointer(e, drag.button, drag.tool));
       }
     };
 
     const onPointerUp = (e: PointerEvent) => {
       if (!drag || drag.pointerId !== e.pointerId) return;
-      if (drag.mode === 'tool') drag.tool.end(toPointer(e, drag.button));
+      if (drag.mode === 'tool') drag.tool.end(toPointer(e, drag.button, drag.tool));
       else setPanning(false);
       drag = null;
       if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);

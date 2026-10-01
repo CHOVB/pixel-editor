@@ -6,15 +6,18 @@
  */
 import type { TKey } from '../i18n';
 import type { ToolId } from '../store/editorStore';
+import { BoneCreateTool, PoseTool } from './boneTools';
 import { BucketTool } from './bucketTool';
 import { FreehandTool } from './brushTools';
 import { MoveTool } from './moveTool';
 import { PickerTool } from './pickerTool';
 import { LassoTool, RectSelectTool, WandTool } from './selectTools';
 import { ShapeTool } from './shapeTools';
+import { TransformTool } from './transformTool';
 import type { Tool } from './types';
 
 export const moveTool = new MoveTool();
+export const transformTool = new TransformTool();
 
 /** 손 도구(화면 이동)는 캔버스가 직접 처리하므로 빈 도구입니다. */
 const handTool: Tool = { begin() {}, move() {}, end() {} };
@@ -32,6 +35,9 @@ export const TOOLS: Record<ToolId, Tool> = {
   lasso: new LassoTool(),
   wand: new WandTool(),
   move: moveTool,
+  transform: transformTool,
+  bone: new BoneCreateTool(),
+  pose: new PoseTool(),
   hand: handTool,
 };
 
@@ -62,6 +68,10 @@ export const TOOL_LIST: (ToolInfo | null)[] = [
   { id: 'wand', key: 'W', code: 'KeyW', name: 'tool.wand', hint: 'hint.wand' },
   { id: 'move', key: 'V', code: 'KeyV', name: 'tool.move', hint: 'hint.move' },
   null,
+  { id: 'transform', key: 'T', code: 'KeyT', name: 'tool.transform', hint: 'hint.transform' },
+  { id: 'bone', key: 'J', code: 'KeyJ', name: 'tool.bone', hint: 'hint.bone' },
+  { id: 'pose', key: 'P', code: 'KeyP', name: 'tool.pose', hint: 'hint.pose' },
+  null,
   { id: 'hand', key: 'H', code: 'KeyH', name: 'tool.hand', hint: 'hint.hand' },
 ];
 
@@ -72,4 +82,9 @@ export function toolInfo(id: ToolId): ToolInfo {
 /** 이 도구가 브러시 크기를 사용하는지 */
 export function usesBrush(id: ToolId): boolean {
   return id === 'pencil' || id === 'eraser' || id === 'dither' || id === 'line' || id === 'rect' || id === 'ellipse';
+}
+
+/** 뼈대를 화면에 보여줘야 하는 도구인지 */
+export function showsBones(id: ToolId): boolean {
+  return id === 'bone' || id === 'pose';
 }

@@ -5,10 +5,14 @@
  *   setState({ dialog: { id: 'export' } })
  */
 import { useEditor } from '../../store/editorStore';
+import { CodexDialog, PartFillDialog } from './AiDialogs';
 import { CanvasSizeDialog, ScaleDialog } from './CanvasDialogs';
 import { ExportDialog } from './ExportDialog';
+import { InbetweenDialog } from './InbetweenDialog';
 import { AboutDialog, ConfirmDialog, FrameDurationDialog, LayerPropsDialog, ShortcutsDialog, TagDialog } from './MiscDialogs';
 import { NewProjectDialog } from './NewProjectDialog';
+import { PixelFixerDialog } from './PixelFixerDialog';
+import { CleanupDialog, ImportSheetDialog, ReplaceColorDialog, VfxDialog } from './ToolDialogs';
 import { WelcomeDialog } from './WelcomeDialog';
 
 export function DialogHost() {
@@ -50,6 +54,22 @@ export function DialogHost() {
           onConfirm={payload.onConfirm as (() => void) | undefined}
         />
       );
+    case 'inbetween':
+      return <InbetweenDialog from={payload.from as number | undefined} to={payload.to as number | undefined} />;
+    case 'pixelFixer':
+      return <PixelFixerDialog file={payload.file as File | undefined} />;
+    case 'importSheet':
+      return <ImportSheetDialog />;
+    case 'replaceColor':
+      return <ReplaceColorDialog />;
+    case 'cleanup':
+      return <CleanupDialog />;
+    case 'vfx':
+      return <VfxDialog />;
+    case 'codex':
+      return <CodexDialog />;
+    case 'partFill':
+      return <PartFillDialog />;
     default:
       return null;
   }

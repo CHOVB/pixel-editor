@@ -17,7 +17,19 @@ export interface Prefs {
   brushShape?: BrushShape;
   pixelPerfect?: boolean;
   paletteId?: string;
-  onion?: { enabled: boolean; before: number; after: number; opacity: number; tint: boolean };
+  onion?: { enabled: boolean; before: number; after: number; opacity: number; tint: boolean; wrap?: boolean };
+  bottomHeight?: number;
+  linkOnDuplicate?: boolean;
+  theme?: 'dark' | 'light' | 'system';
+  uiScale?: number;
+  /** Codex 브리지 주소 (기본 http://127.0.0.1:47811) */
+  codexBridgeUrl?: string;
+  /** 단축키 사용자 설정: 기능 id → 키 조합 */
+  shortcuts?: Record<string, string>;
+  /** 자동 저장 간격(초) */
+  autosaveSeconds?: number;
+  /** 튜토리얼을 끝까지 봤는지 */
+  tutorialDone?: boolean;
 }
 
 export function loadPrefs(): Prefs {
@@ -33,7 +45,7 @@ export function loadPrefs(): Prefs {
 export function savePrefs(prefs: Prefs): void {
   try {
     if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(KEY, JSON.stringify(prefs));
+    localStorage.setItem(KEY, JSON.stringify({ ...loadPrefs(), ...prefs }));
   } catch {
     // 저장 실패는 무시합니다. (설정이 기억되지 않을 뿐 사용에는 문제 없음)
   }

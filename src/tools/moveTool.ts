@@ -12,9 +12,10 @@ import { cloneBuffer, createBuffer } from '../core/pixels';
 import { ensureCel } from '../core/project';
 import { fullMask, selectionFromMask, translateMask } from '../core/selection';
 import type { Selection } from '../core/types';
+import { markEdited } from '../core/versions';
 import { requestRender } from '../editor/renderBus';
 import { tr } from '../i18n';
-import { canEditCurrentLayer, commitPixels, currentFrameObj } from '../store/actions';
+import { canEditCurrentLayer, commitPixels, currentEditFrameId } from '../store/actions';
 import { getState, setState } from '../store/editorStore';
 import type { Tool, ToolPointer } from './types';
 
@@ -54,16 +55,16 @@ export class MoveTool implements Tool {
   private ensureLift(): Lift | null {
     const s = getState();
     const p = s.project;
-    const frame = currentFrameObj();
+    const frameId = currentEditFrameId();
     const valid =
       this.lift &&
       this.lift.version === s.docVersion &&
       this.lift.layerId === s.currentLayerId &&
-      this.lift.frameId === frame.id &&
+      this.lift.frameId === frameId &&
       this.lift.base.length === p.width * p.height * 4;
     if (valid) return this.lift;
 
-    const cel = ensureCel(p, s.currentLayerId, frame.id);
+    const cel = ensureCel(p, s.currentLayerId, frameId);
     const sel = s.selection;
     const mask = sel ? sel.mask : fullMask(p.width * p.height);
     const base = cloneBuffer(cel);
@@ -82,7 +83,7 @@ export class MoveTool implements Tool {
     }
     this.lift = {
       layerId: s.currentLayerId,
-      frameId: frame.id,
+      frameId,
       base,
       floating,
       mask: sel ? sel.mask : null,
@@ -121,6 +122,7 @@ export class MoveTool implements Tool {
       const moved = translateMask(lift.mask, w, h, lift.dx, lift.dy);
       setState({ selection: selectionFromMask(moved, w, h) });
     }
+    markEdited(cel);
     requestRender();
   }
 
@@ -177,10 +179,10 @@ export class MoveTool implements Tool {
 
   /** 방향키로 조금씩 옮기기 */
   nudge(dx: number, dy: number): void {
-    const pointer: ToolPointer = { x: 0, y: 0, button: 0, shift: false, ctrl: false, alt: false };
+    const pointer: ToolPointer = { x: 0, y: 0, fx: 0, fy: 0, zoom: 1, button: 0, shift: false, ctrl: false, alt: false };
     this.begin(pointer);
     if (!this.drag) return;
-    this.move({ ...pointer, x: dx, y: dy });
+    this.move({ ...pointer, x: dx, y: dy, fx: dx, fy: dy });
     this.end();
   }
 }

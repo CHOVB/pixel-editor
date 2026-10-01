@@ -5,6 +5,8 @@
  * 오른쪽에는 "이 도구는 이렇게 쓰세요" 라는 짧은 도움말이 나옵니다.
  */
 import { useT } from '../i18n';
+import { centerPivotAction, setTrackMethodAction, toggleKeyframeAction } from '../store/animActions';
+import { autoBindLayersAction, clearPoseKeyAction } from '../store/boneActions';
 import { setState, useEditor } from '../store/editorStore';
 import { toolInfo, usesBrush } from '../tools';
 import { Icon } from './Icon';
@@ -21,6 +23,10 @@ export function ToolOptionsBar() {
   const shapeFilled = useEditor((s) => s.shapeFilled);
   const symmetryX = useEditor((s) => s.symmetryX);
   const symmetryY = useEditor((s) => s.symmetryY);
+  const showBones = useEditor((s) => s.showBones);
+  const ikEnabled = useEditor((s) => s.ikEnabled);
+  const ikChain = useEditor((s) => s.ikChain);
+  const method = useEditor((s) => s.project.layers.find((l) => l.id === s.currentLayerId)?.anim?.method ?? 'nearest');
   const info = toolInfo(tool);
 
   const drawingTool = tool === 'pencil' || tool === 'eraser' || tool === 'dither';
@@ -114,6 +120,54 @@ export function ToolOptionsBar() {
             <Icon name="mirrorY" size={16} />
           </button>
         </div>
+      )}
+
+      {tool === 'transform' && (
+        <>
+          <div className="segmented" role="group" aria-label={t('anim.method')}>
+            <button type="button" className={method === 'nearest' ? 'active' : ''} onClick={() => setTrackMethodAction('nearest')} data-tip={t('anim.nearestTip')}>
+              {t('anim.nearest')}
+            </button>
+            <button type="button" className={method === 'rotsprite' ? 'active' : ''} onClick={() => setTrackMethodAction('rotsprite')} data-tip={t('anim.rotspriteTip')}>
+              RotSprite
+            </button>
+          </div>
+          <button type="button" className="btn small" onClick={toggleKeyframeAction} data-tip="K">
+            <Icon name="diamond" size={14} /> {t('menu.addKey')}
+          </button>
+          <button type="button" className="btn small" onClick={centerPivotAction}>
+            <Icon name="target" size={14} /> {t('anim.centerPivot')}
+          </button>
+        </>
+      )}
+
+      {(tool === 'bone' || tool === 'pose') && (
+        <Toggle checked={showBones} onChange={(v) => setState({ showBones: v })}>
+          {t('bones.show')}
+        </Toggle>
+      )}
+
+      {tool === 'bone' && (
+        <button type="button" className="btn small" onClick={autoBindLayersAction} data-tip={t('bones.autoBindTip')}>
+          <Icon name="link" size={14} /> {t('bones.autoBind')}
+        </button>
+      )}
+
+      {tool === 'pose' && (
+        <>
+          <Toggle checked={ikEnabled} onChange={(v) => setState({ ikEnabled: v })} tip={t('bones.ikTip')}>
+            IK
+          </Toggle>
+          {ikEnabled && (
+            <label className="opt" data-tip={t('bones.chainTip')}>
+              <span>{t('bones.chain')}</span>
+              <NumberField value={ikChain} min={2} max={6} width={40} onChange={(v) => setState({ ikChain: v })} />
+            </label>
+          )}
+          <button type="button" className="btn small" onClick={() => clearPoseKeyAction(false)}>
+            {t('bones.clearKey')}
+          </button>
+        </>
       )}
 
       <div className="tool-hint" title={t(info.hint)}>

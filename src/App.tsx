@@ -5,14 +5,16 @@
  *  ├────────────── 도구 옵션 ──────────────┤
  *  │ 도구 │        캔버스         │ 오른쪽 │
  *  │ 막대 │                       │ 패널   │
- *  ├────────── 타임라인 ─────────┤ 미리보기│
+ *  ├════════ (끌어서 높이 조절) ═══════════┤
+ *  │          타임라인            │미리보기│
  *  └────────────── 상태 표시줄 ────────────┘
  *
  * 그 밖에 "전역"으로 해야 하는 일들도 여기서 연결합니다.
- *  - 키보드 단축키, 붙여넣기, 파일 끌어다 놓기, 자동 저장, 닫기 전 경고, 환경설정 저장
+ *  - 키보드 단축키, 붙여넣기, 파일 끌어다 놓기, 자동 저장, 닫기 전 경고, 환경설정 저장, 테마
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CanvasView } from './components/CanvasView';
+import { ContextMenuHost } from './components/ContextMenuHost';
 import { DialogHost } from './components/dialogs/DialogHost';
 import { MenuBar } from './components/MenuBar';
 import { PreviewPanel } from './components/PreviewPanel';
@@ -29,8 +31,11 @@ import { handleKeyDown } from './editor/shortcuts';
 import { usePlayback } from './editor/usePlayback';
 import { useT } from './i18n';
 import { notify } from './store/actions';
-import { getState, useEditor } from './store/editorStore';
+import { getState, setState, useEditor, type Theme } from './store/editorStore';
 import { savePrefs } from './store/prefs';
+
+const MIN_BOTTOM = 120;
+const MAX_BOTTOM_RATIO = 0.6;
 
 function useGlobalEvents() {
   const t = useT();
@@ -67,6 +72,8 @@ function useGlobalEvents() {
       const file = e.dataTransfer?.files?.[0];
       if (!file) return;
       e.preventDefault();
+      // 대화상자(예: AI 도트 정리)가 직접 파일을 받는 경우에는 건드리지 않습니다.
+      if (getState().dialog) return;
       if (e.shiftKey && file.type.startsWith('image/')) void importImageFileAsLayer(file);
       else confirmDiscard(() => void openFileObject(file));
     };
@@ -129,7 +136,11 @@ function useGlobalEvents() {
           s.brushShape !== prev.brushShape ||
           s.pixelPerfect !== prev.pixelPerfect ||
           s.paletteId !== prev.paletteId ||
-          s.onion !== prev.onion
+          s.onion !== prev.onion ||
+          s.bottomHeight !== prev.bottomHeight ||
+          s.linkOnDuplicate !== prev.linkOnDuplicate ||
+          s.theme !== prev.theme ||
+          s.uiScale !== prev.uiScale
         ) {
           savePrefs({
             language: s.language,
@@ -141,6 +152,10 @@ function useGlobalEvents() {
             pixelPerfect: s.pixelPerfect,
             paletteId: s.paletteId,
             onion: s.onion,
+            bottomHeight: s.bottomHeight,
+            linkOnDuplicate: s.linkOnDuplicate,
+            theme: s.theme,
+            uiScale: s.uiScale,
           });
         }
         if (s.language !== prev.language) document.documentElement.lang = s.language;
@@ -151,10 +166,62 @@ function useGlobalEvents() {
   return dragging;
 }
 
+/** 테마(다크/라이트/시스템 설정 따르기)와 화면 배율을 문서 전체에 적용 */
+function useTheme(): void {
+  const theme = useEditor((s) => s.theme);
+  const uiScale = useEditor((s) => s.uiScale);
+  useEffect(() => {
+    const media = window.matchMedia?.('(prefers-color-scheme: light)');
+    const apply = (mode: Theme) => {
+      const resolved = mode === 'system' ? (media?.matches ? 'light' : 'dark') : mode;
+      document.documentElement.dataset.theme = resolved;
+    };
+    apply(theme);
+    if (theme !== 'system' || !media) return;
+    const onChange = () => apply('system');
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, [theme]);
+  useEffect(() => {
+    document.documentElement.style.setProperty('--ui-scale', String(uiScale));
+    document.documentElement.style.fontSize = `${13 * uiScale}px`;
+  }, [uiScale]);
+}
+
+/** 캔버스와 타임라인 사이의 가로 막대: 위아래로 끌어서 타임라인 높이를 바꿉니다. */
+function BottomSplitter() {
+  const t = useT();
+  const start = useRef<{ y: number; h: number } | null>(null);
+  return (
+    <div
+      className="h-splitter"
+      role="separator"
+      aria-orientation="horizontal"
+      data-tip={t('layout.resizeTimeline')}
+      onPointerDown={(e) => {
+        e.currentTarget.setPointerCapture(e.pointerId);
+        start.current = { y: e.clientY, h: getState().bottomHeight };
+      }}
+      onPointerMove={(e) => {
+        if (!start.current) return;
+        const max = Math.round(window.innerHeight * MAX_BOTTOM_RATIO);
+        const h = Math.max(MIN_BOTTOM, Math.min(max, start.current.h - (e.clientY - start.current.y)));
+        setState({ bottomHeight: h });
+      }}
+      onPointerUp={() => {
+        start.current = null;
+      }}
+      onDoubleClick={() => setState({ bottomHeight: 210 })}
+    />
+  );
+}
+
 export function App() {
   const t = useT();
   const dragging = useGlobalEvents();
+  const bottomHeight = useEditor((s) => s.bottomHeight);
   usePlayback();
+  useTheme();
 
   useEffect(() => {
     document.documentElement.lang = getState().language;
@@ -169,7 +236,8 @@ export function App() {
         <CanvasView />
         <RightPanel />
       </main>
-      <div className="bottom-area">
+      <BottomSplitter />
+      <div className="bottom-area" style={{ height: bottomHeight }}>
         <Timeline />
         <aside className="preview-dock" aria-label={t('panel.preview')}>
           <div className="dock-title">{t('panel.preview')}</div>
@@ -178,6 +246,7 @@ export function App() {
       </div>
       <StatusBar />
       <DialogHost />
+      <ContextMenuHost />
       <ToastHost />
       <TooltipLayer />
       {dragging && <div className="drop-overlay">{t('drop.hint')}</div>}

@@ -15,6 +15,7 @@ import { openFileDialog, saveBlob, type FileTypeOption, type WritableHandle } fr
 import { kvDelete, kvGet, kvSet } from '../platform/storage';
 import { commitStructure, notify, replaceProject, setPaletteColors } from '../store/actions';
 import { getState, setState } from '../store/editorStore';
+import { openGifAsProject } from './importActions';
 
 const PROJECT_TYPES: FileTypeOption[] = [
   { description: 'Pixel Editor Project', accept: { 'application/json': [PROJECT_EXTENSION] } },
@@ -99,8 +100,11 @@ export async function openFile(): Promise<void> {
   await openFileObject(result.file, result.handle);
 }
 
-/** 파일 객체(열기 대화상자, 드래그&드롭)를 열기 */
-export async function openFileObject(file: File, handle: WritableHandle | null = null): Promise<void> {
+/**
+ * 파일 객체(열기 대화상자, 드래그&드롭)를 열기
+ * opts.direct=true 면 큰 이미지도 "AI 도트 정리" 를 거치지 않고 그대로 엽니다.
+ */
+export async function openFileObject(file: File, handle: WritableHandle | null = null, opts: { direct?: boolean } = {}): Promise<void> {
   const lower = file.name.toLowerCase();
   try {
     // 확장자가 바뀌었거나 없어도 내용이 '{' 로 시작하면 프로젝트 파일로 봅니다.
@@ -112,7 +116,16 @@ export async function openFileObject(file: File, handle: WritableHandle | null =
       notify(tr('toast.opened', { name: file.name }), 'success');
       return;
     }
+    // 움직이는 GIF 는 프레임별로 나눠서 엽니다.
+    if (lower.endsWith('.gif') || file.type === 'image/gif') {
+      if (await openGifAsProject(file)) return;
+    }
     const image = await decodeImageFile(file);
+    // 큰 이미지(대부분 AI 가 만든 도트 그림)는 "AI 도트 정리" 로 여는 것을 추천합니다.
+    if (!opts.direct && Math.max(image.width, image.height) > 256) {
+      setState({ dialog: { id: 'pixelFixer', payload: { file } } });
+      return;
+    }
     if (image.width > MAX_CANVAS_SIZE || image.height > MAX_CANVAS_SIZE) {
       notify(tr('toast.imageTooLarge', { max: MAX_CANVAS_SIZE }), 'error');
       return;

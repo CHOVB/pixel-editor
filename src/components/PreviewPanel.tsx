@@ -28,7 +28,18 @@ export function PreviewPanel() {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const checker = ctx.createPattern(createCheckerTile(6, '#3a3b45', '#2e2f38'), 'repeat');
+    // 체크무늬 색은 테마(CSS 변수)를 따릅니다. 테마가 바뀌면 다시 만듭니다.
+    const cssVar = (name: string, fallback: string) => getComputedStyle(canvas).getPropertyValue(name).trim() || fallback;
+    let checkerTheme = '';
+    let checker: CanvasPattern | null = null;
+    const ensureChecker = () => {
+      const key = cssVar('--checker-a', '#3a3b45') + cssVar('--checker-b', '#2e2f38');
+      if (key !== checkerTheme) {
+        checkerTheme = key;
+        checker = ctx.createPattern(createCheckerTile(6, cssVar('--checker-a', '#3a3b45'), cssVar('--checker-b', '#2e2f38')), 'repeat');
+      }
+      return checker;
+    };
     const sprite = document.createElement('canvas');
     let frame = getState().currentFrame;
     let elapsed = 0;
@@ -75,10 +86,11 @@ export function PreviewPanel() {
         const dh = p.height * z;
         const x = Math.round((w - dw) / 2);
         const y = Math.round((h - dh) / 2);
-        if (checker) {
+        const pattern = ensureChecker();
+        if (pattern) {
           ctx.save();
           ctx.translate(x, y);
-          ctx.fillStyle = checker;
+          ctx.fillStyle = pattern;
           ctx.fillRect(0, 0, dw, dh);
           ctx.restore();
         }

@@ -11,7 +11,6 @@ import {
   duplicateFrame,
   duplicateLayer,
   ensureCel,
-  mergeDown,
   moveFrame,
   removeFrame,
   removeLayer,
@@ -21,6 +20,7 @@ import {
   rotateProject,
   snapshotStructure,
 } from '../src/core/project';
+import { mergeDown } from '../src/core/bake';
 import { compositeFrame } from '../src/core/render';
 import { combineMasks, maskOutline, rectMask, translateMask } from '../src/core/selection';
 
