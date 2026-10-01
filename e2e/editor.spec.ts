@@ -4,6 +4,9 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { BLEND_MODES } from '../src/core/blend';
+import { serializeProject } from '../src/core/fileFormat';
+import { addLayer, createProject, ensureCel } from '../src/core/project';
 
 const SPRITE = fileURLToPath(new URL('./fixtures/ai-sprite.png', import.meta.url));
 
@@ -102,6 +105,77 @@ test('effect values can be keyframed', async ({ page }) => {
   await amount.press('Enter');
   await expect(page.locator('.tl-cell .kf.fx')).toHaveCount(3);
   await expect(page.locator('.fx-key-list')).toHaveText('◆1◆3◆4');
+});
+
+/** 모든 블렌드 모드 + 반투명 + 그룹을 쓰는 시험용 프로젝트 파일 */
+async function blendTestFile(): Promise<Buffer> {
+  const W = 48;
+  const p = createProject(W, W, { name: 'blend-test' });
+  const fill = (buf: Uint8ClampedArray, f: (x: number, y: number) => [number, number, number, number]) => {
+    for (let y = 0; y < W; y++)
+      for (let x = 0; x < W; x++) {
+        const [r, g, b, a] = f(x, y);
+        buf.set([r, g, b, a], (y * W + x) * 4);
+      }
+  };
+  fill(ensureCel(p, p.layers[0].id, p.frames[0].id), (x, y) => [x * 5, y * 5, 128, y < 40 ? 255 : 120]);
+  BLEND_MODES.forEach((mode, i) => {
+    const layer = addLayer(p, undefined, mode);
+    layer.blendMode = mode;
+    layer.opacity = i % 2 ? 0.8 : 1;
+    fill(ensureCel(p, layer.id, p.frames[0].id), (x, y) =>
+      (x + y + i * 3) % 7 < 3 ? [(i * 40 + x * 3) % 256, (200 - y * 4 + i * 9) % 256, (i * 70) % 256, 90 + ((x * 7 + i * 13) % 166)] : [0, 0, 0, 0],
+    );
+  });
+  const group = addLayer(p, undefined, 'group', 'group');
+  group.opacity = 0.7;
+  const child = addLayer(p, undefined, 'child', 'pixel', group.id);
+  child.blendMode = 'screen';
+  fill(ensureCel(p, child.id, p.frames[0].id), (x) => (x % 5 === 0 ? [255, 220, 40, 200] : [0, 0, 0, 0]));
+  return Buffer.from(await serializeProject(p));
+}
+
+test('GPU (WebGL) canvas matches the CPU renderer for every blend mode', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.welcome .btn.ghost.continue').click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.keyboard.press('Control+o');
+  await (await chooser).setFiles({ name: 'blend-test.pxe', mimeType: 'application/json', buffer: await blendTestFile() });
+  await expect(page.locator('.tl-layer', { hasText: 'hardLight' })).toBeVisible();
+  await page.mouse.move(5, 5);
+  await expect(page.locator('.statusbar .renderer')).toHaveText('⚡ GPU');
+
+  // 화면 캔버스 픽셀을 페이지 안에 저장해 두고, 비교도 페이지 안에서 합니다. (큰 배열을 주고받지 않게)
+  await page.waitForTimeout(200);
+  await page.evaluate(() => {
+    const c = document.querySelector<HTMLCanvasElement>('.main-canvas')!;
+    (window as unknown as { __gpuShot: Uint8ClampedArray }).__gpuShot = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+  });
+
+  await page.keyboard.press('Control+,');
+  await page.locator('.settings-dialog .segmented button', { hasText: /^CPU$/ }).click();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.statusbar .renderer')).toHaveText('CPU');
+  await page.waitForTimeout(200);
+  const result = await page.evaluate(() => {
+    const c = document.querySelector<HTMLCanvasElement>('.main-canvas')!;
+    const cpu = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+    const gpu = (window as unknown as { __gpuShot: Uint8ClampedArray }).__gpuShot;
+    let maxDiff = 0;
+    let over = 0;
+    let colorful = 0;
+    for (let i = 0; i < cpu.length; i++) {
+      const d = Math.abs(cpu[i] - gpu[i]);
+      if (d > maxDiff) maxDiff = d;
+      if (d > 2) over++;
+    }
+    for (let i = 0; i < cpu.length; i += 4) if (Math.abs(cpu[i] - cpu[i + 1]) > 30) colorful++;
+    return { same: cpu.length === gpu.length, maxDiff, over, colorful };
+  });
+  expect(result.same).toBe(true);
+  expect(result.colorful).toBeGreaterThan(10000); // 그림이 실제로 화면에 그려졌는지
+  expect(result.over).toBe(0);
+  expect(result.maxDiff).toBeLessThanOrEqual(2);
 });
 
 test('cleans up an AI-made pixel image to true pixel size', async ({ page }) => {

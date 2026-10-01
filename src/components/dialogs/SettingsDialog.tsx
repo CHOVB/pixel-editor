@@ -81,6 +81,8 @@ function GeneralTab() {
   const language = useEditor((s) => s.language);
   const theme = useEditor((s) => s.theme);
   const uiScale = useEditor((s) => s.uiScale);
+  const renderer = useEditor((s) => s.renderer);
+  const activeRenderer = useEditor((s) => s.activeRenderer);
   const [showWelcome, setShowWelcome] = useState(loadPrefs().showWelcome !== false);
   return (
     <div className="settings-list">
@@ -111,6 +113,17 @@ function GeneralTab() {
             </button>
           ))}
         </div>
+      </Row>
+      <Row label={t('settings.renderer')} tip={t('settings.rendererTip')}>
+        <div className="segmented">
+          <button type="button" className={renderer === 'gpu' ? 'active' : ''} onClick={() => setState({ renderer: 'gpu' })}>
+            {t('settings.renderer.gpu')}
+          </button>
+          <button type="button" className={renderer === 'cpu' ? 'active' : ''} onClick={() => setState({ renderer: 'cpu' })}>
+            {t('settings.renderer.cpu')}
+          </button>
+        </div>
+        {renderer === 'gpu' && activeRenderer === 'cpu' && <small className="settings-warn">{t('settings.rendererUnavailable')}</small>}
       </Row>
       <Row label={t('settings.showWelcome')}>
         <Toggle

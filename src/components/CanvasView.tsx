@@ -18,7 +18,7 @@ import { colorToCss } from '../core/color';
 import { brushOffsets } from '../core/drawing';
 import { layerMatrix } from '../core/layerSpace';
 import { onionTargets } from '../core/frameTools';
-import { compositeFrame } from '../core/render';
+import { compositeFrame, layerPieces } from '../core/render';
 import { maskOutline, type Segment } from '../core/selection';
 import { boneEndpoints, poseWorld } from '../core/skeleton';
 import type { Layer, Project, Selection } from '../core/types';
@@ -28,6 +28,7 @@ import { getState, setState, useEditor, type ToolId } from '../store/editorStore
 import { showsBones, TOOLS, usesBrush } from '../tools';
 import type { Tool, ToolPointer } from '../tools/types';
 import { createCheckerTile } from '../platform/canvas';
+import { GlCompositor } from '../platform/glCompositor';
 
 const WORKSPACE_BG_VAR = '--canvas-bg';
 const ONION_PREV_TINT = 'rgba(255, 70, 110, 0.55)';
@@ -140,6 +141,17 @@ export function CanvasView() {
     let wheelAcc = 0;
 
     const spriteCanvas = document.createElement('canvas');
+    /** GPU 합성기 (undefined = 아직 안 만들어 봄, null = 이 환경에서 못 씀) */
+    let gpu: GlCompositor | null | undefined;
+    const gpuFor = (setting: 'gpu' | 'cpu'): GlCompositor | null => {
+      if (setting === 'cpu') {
+        if (gpu) gpu.dispose();
+        gpu = undefined;
+        return null;
+      }
+      if (gpu === undefined) gpu = GlCompositor.create();
+      return gpu;
+    };
     let checker: CanvasPattern | null = null;
     let checkerTheme = '';
     let outlineCache: { sel: Selection; segs: Segment[] } | null = null;
@@ -270,7 +282,13 @@ export function CanvasView() {
       }
 
       // 현재 프레임 합성 이미지 (밑그림 스케치 레이어 포함)
-      putBuffer(spriteCanvas, compositeFrame(p, s.currentFrame, { includeGuides: true }), p.width, p.height);
+      // GPU 를 쓸 수 있으면 레이어 섞기를 WebGL 로, 아니면 CPU 로 합성합니다.
+      const gl = gpuFor(s.renderer);
+      const glCanvas = gl ? gl.render(layerPieces(p, null, s.currentFrame, { includeGuides: true }), p.width, p.height) : null;
+      const sprite: CanvasImageSource = glCanvas ?? spriteCanvas;
+      if (!glCanvas) putBuffer(spriteCanvas, compositeFrame(p, s.currentFrame, { includeGuides: true }), p.width, p.height);
+      const active = glCanvas ? 'gpu' : 'cpu';
+      if (s.activeRenderer !== active) queueMicrotask(() => setState({ activeRenderer: active }));
 
       // 타일 반복 미리보기
       if (s.tileMode !== 'none') {
@@ -281,12 +299,12 @@ export function CanvasView() {
         for (const ty of ys) {
           for (const tx of xs) {
             if (tx === 0 && ty === 0) continue;
-            ctx.drawImage(spriteCanvas, ox + tx * sw, oy + ty * sh, sw, sh);
+            ctx.drawImage(sprite, ox + tx * sw, oy + ty * sh, sw, sh);
           }
         }
         ctx.restore();
       }
-      ctx.drawImage(spriteCanvas, ox, oy, sw, sh);
+      ctx.drawImage(sprite, ox, oy, sw, sh);
 
       // 밑그림 이미지 (그림 앞)
       drawReferences(p, true, ox, oy, z);
@@ -663,6 +681,8 @@ export function CanvasView() {
       canvas.removeEventListener('pointerleave', onPointerLeave);
       canvas.removeEventListener('wheel', onWheel);
       canvas.removeEventListener('contextmenu', onContextMenu);
+      gpu?.dispose();
+      gpu = undefined;
     };
   }, []);
 

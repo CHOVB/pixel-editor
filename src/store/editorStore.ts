@@ -173,6 +173,10 @@ export interface EditorState {
   language: Lang;
   theme: Theme;
   uiScale: number;
+  /** 화면 그리기 방식 설정: gpu = WebGL 가속(안 되면 자동으로 CPU), cpu = 항상 CPU */
+  renderer: 'gpu' | 'cpu';
+  /** 지금 실제로 쓰는 방식 (캔버스가 정함, 상태바 표시용) */
+  activeRenderer: 'gpu' | 'cpu' | null;
   dialog: DialogState | null;
   toast: Toast | null;
   contextMenu: ContextMenuState | null;
@@ -273,6 +277,8 @@ export const useEditor = create<EditorState>(() => ({
   language: initialLanguage,
   theme: prefs.theme ?? 'dark',
   uiScale: prefs.uiScale ?? 1,
+  renderer: prefs.renderer ?? 'gpu',
+  activeRenderer: null,
   dialog: prefs.showWelcome === false ? null : { id: 'welcome' },
   toast: null,
   contextMenu: null,

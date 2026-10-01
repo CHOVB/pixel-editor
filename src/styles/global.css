@@ -1331,6 +1331,10 @@ kbd {
   color: var(--success);
 }
 
+.status-item.renderer.gpu {
+  color: var(--accent-strong);
+}
+
 /* ------------------------------------------------------------------ */
 /* 알림 / 말풍선                                                        */
 /* ------------------------------------------------------------------ */
@@ -2893,7 +2897,18 @@ kbd {
 .settings-control {
   flex: none;
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
+  gap: 4px;
+}
+
+.settings-warn {
+  flex-basis: 100%;
+  max-width: 280px;
+  margin-left: auto;
+  text-align: right;
+  color: var(--warn);
+  font-size: 11px;
 }
 
 .shortcut-edit-list {

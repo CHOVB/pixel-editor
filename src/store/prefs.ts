@@ -22,6 +22,8 @@ export interface Prefs {
   linkOnDuplicate?: boolean;
   theme?: 'dark' | 'light' | 'system';
   uiScale?: number;
+  /** 화면 그리기 방식 (gpu = WebGL 가속, cpu) */
+  renderer?: 'gpu' | 'cpu';
   /** Codex 브리지 주소 (기본 http://127.0.0.1:47811) */
   codexBridgeUrl?: string;
   /** 단축키 사용자 설정: 기능 id → 키 조합 */

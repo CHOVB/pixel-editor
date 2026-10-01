@@ -165,7 +165,8 @@ function useGlobalEvents() {
           s.bottomHeight !== prev.bottomHeight ||
           s.linkOnDuplicate !== prev.linkOnDuplicate ||
           s.theme !== prev.theme ||
-          s.uiScale !== prev.uiScale
+          s.uiScale !== prev.uiScale ||
+          s.renderer !== prev.renderer
         ) {
           savePrefs({
             language: s.language,
@@ -181,6 +182,7 @@ function useGlobalEvents() {
             linkOnDuplicate: s.linkOnDuplicate,
             theme: s.theme,
             uiScale: s.uiScale,
+            renderer: s.renderer,
           });
         }
         if (s.language !== prev.language) document.documentElement.lang = s.language;

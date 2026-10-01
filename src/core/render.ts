@@ -11,6 +11,7 @@
  *
  * 계산 결과는 캐시(저장)해 두고, 원본이나 설정이 바뀐 경우에만 다시 계산합니다.
  * 화면 표시, 썸네일, 미리보기, PNG/GIF 내보내기가 모두 이 파일을 사용합니다.
+ * (화면 표시는 ⑤ 합성을 GPU 로 할 수 있습니다 → src/render/glCompositor.ts)
  */
 import { isIdentity, matKey, type Mat } from './affine';
 import { blendInto } from './blend';
@@ -22,7 +23,7 @@ import { createBuffer, fillBuffer } from './pixels';
 import { childrenOf, sourceFrameId } from './project';
 import { transformBuffer } from './resample';
 import { applyBinding, bindingKey } from './skeleton';
-import type { Color, Layer, Project } from './types';
+import type { BlendMode, Color, Layer, Project } from './types';
 import { bufferVersion } from './versions';
 
 /* ------------------------------------------------------------------ */
@@ -39,8 +40,15 @@ export interface SourceResult {
 /* 캐시                                                                 */
 /* ------------------------------------------------------------------ */
 
+/**
+ * 최근에 쓴 결과부터 남기는 캐시(LRU).
+ * 개수뿐 아니라 "메모리 크기"도 제한합니다. 1024×1024 그림 한 장이 4MB 라서
+ * 개수만 세면 큰 캔버스에서 메모리를 너무 많이 쓸 수 있기 때문입니다.
+ */
 const CACHE_LIMIT = 400;
+const CACHE_BYTES = 384 * 1024 * 1024;
 const cache = new Map<string, Uint8ClampedArray>();
+let cacheBytes = 0;
 
 function cacheGet(key: string): Uint8ClampedArray | undefined {
   const v = cache.get(key);
@@ -52,15 +60,29 @@ function cacheGet(key: string): Uint8ClampedArray | undefined {
 }
 
 function cacheSet(key: string, value: Uint8ClampedArray): void {
+  const old = cache.get(key);
+  if (old) {
+    cacheBytes -= old.byteLength;
+    cache.delete(key);
+  }
   cache.set(key, value);
-  if (cache.size > CACHE_LIMIT) {
+  cacheBytes += value.byteLength;
+  while (cache.size > 1 && (cache.size > CACHE_LIMIT || cacheBytes > CACHE_BYTES)) {
     const first = cache.keys().next().value;
-    if (first !== undefined) cache.delete(first);
+    if (first === undefined) break;
+    cacheBytes -= cache.get(first)?.byteLength ?? 0;
+    cache.delete(first);
   }
 }
 
 export function clearRenderCache(): void {
   cache.clear();
+  cacheBytes = 0;
+}
+
+/** 테스트/진단용: 캐시가 차지하는 메모리(바이트) */
+export function renderCacheBytes(): number {
+  return cacheBytes;
 }
 
 /* ------------------------------------------------------------------ */
@@ -87,9 +109,17 @@ function layerSource(p: Project, layer: Layer, frameIndex: number, opts: Composi
       return buf ? { buf, key: bufferVersion(buf) } : null;
     }
     case 'group': {
-      const out = createBuffer(p.width, p.height);
-      const key = compositeChildren(p, layer.id, frameIndex, opts, out);
-      return { buf: out, key: `g(${key})` };
+      // 자식들을 먼저 처리(각자 캐시됨)하고, 합성 결과도 키로 캐시합니다.
+      const pieces = layerPieces(p, layer.id, frameIndex, opts);
+      const key = `g(${piecesKey(pieces)})`;
+      const cacheKey = `${layer.id}|${p.width}x${p.height}|${key}`;
+      let buf = cacheGet(cacheKey);
+      if (!buf) {
+        buf = createBuffer(p.width, p.height);
+        for (const piece of pieces) blendInto(buf, piece.buf, piece.opacity, piece.blendMode);
+        cacheSet(cacheKey, buf);
+      }
+      return { buf, key };
     }
     case 'reference':
       return null;
@@ -167,27 +197,50 @@ export function renderLayer(p: Project, layer: Layer, frameIndex: number, opts: 
   return { buf, opacity: layer.opacity * values.opacity, key };
 }
 
-/** parentId 의 자식들을 out 위에 합성합니다. 반환값: 결과를 구분하는 키 */
-function compositeChildren(p: Project, parentId: string | null, frameIndex: number, opts: CompositeOptions, out: Uint8ClampedArray): string {
-  let key = '';
+/** 합성할 레이어 한 장 (①~④ 처리 끝난 그림 + 불투명도 + 블렌드 모드) */
+export interface LayerPiece extends RenderedLayer {
+  blendMode: BlendMode;
+}
+
+/**
+ * parentId 의 자식 레이어들을 아래→위 순서로 처리한 목록.
+ * 화면용 WebGL 합성기도 이 목록을 받아서 GPU 로 섞습니다.
+ */
+export function layerPieces(p: Project, parentId: string | null, frameIndex: number, opts: CompositeOptions = {}): LayerPiece[] {
+  const out: LayerPiece[] = [];
   for (const child of childrenOf(p, parentId)) {
     if (child.kind === 'reference') continue;
     if (child.guide && !opts.includeGuides) continue;
     if (!child.visible && !opts.includeHidden) continue;
     const r = renderLayer(p, child, frameIndex, opts);
-    if (!r) continue;
-    blendInto(out, r.buf, r.opacity, child.blendMode);
-    key += `${r.key}*${r.opacity}*${child.blendMode};`;
+    if (!r || r.opacity <= 0) continue;
+    out.push({ ...r, blendMode: child.blendMode });
   }
+  return out;
+}
+
+/** 레이어 목록 → 결과를 구분하는 키 (내용·불투명도·블렌드가 같으면 같은 키) */
+export function piecesKey(pieces: LayerPiece[]): string {
+  let key = '';
+  for (const piece of pieces) key += `${piece.key}*${piece.opacity}*${piece.blendMode};`;
   return key;
 }
 
-/** 한 프레임 전체를 합성합니다. */
+/** 한 프레임 전체를 합성합니다. (결과는 캐시되고, 돌려줄 때는 복사본을 줍니다) */
 export function compositeFrame(p: Project, frameIndex: number, options: CompositeOptions = {}): Uint8ClampedArray {
   const out = createBuffer(p.width, p.height);
   if (options.background != null) fillBuffer(out, options.background);
   if (!p.frames[frameIndex]) return out;
-  compositeChildren(p, null, frameIndex, options, out);
+  const pieces = layerPieces(p, null, frameIndex, options);
+  if (pieces.length === 0) return out;
+  const cacheKey = `frame|${p.width}x${p.height}|bg${options.background ?? '-'}|${piecesKey(pieces)}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) {
+    out.set(cached);
+    return out;
+  }
+  for (const piece of pieces) blendInto(out, piece.buf, piece.opacity, piece.blendMode);
+  cacheSet(cacheKey, out.slice());
   return out;
 }
 

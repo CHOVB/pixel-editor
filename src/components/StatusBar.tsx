@@ -1,7 +1,8 @@
 /**
  * 상태 표시줄 (화면 맨 아래)
  * ------------------------------------------------------------
- * 마우스 위치(픽셀 좌표), 그림 크기, 확대 배율, 현재 프레임/레이어, 선택 영역 크기를 보여줍니다.
+ * 마우스 위치(픽셀 좌표), 그림 크기, 확대 배율, 현재 프레임/레이어, 선택 영역 크기,
+ * 화면 그리기 방식(GPU/CPU)을 보여줍니다.
  */
 import { useT } from '../i18n';
 import { useEditor } from '../store/editorStore';
@@ -17,6 +18,7 @@ export function StatusBar() {
   const layerName = useEditor((s) => s.project.layers.find((l) => l.id === s.currentLayerId)?.name ?? '');
   const selection = useEditor((s) => s.selection);
   const dirty = useEditor((s) => s.dirty);
+  const activeRenderer = useEditor((s) => s.activeRenderer);
   useEditor((s) => s.docVersion);
 
   return (
@@ -42,6 +44,11 @@ export function StatusBar() {
         </span>
       )}
       <span className="spacer" />
+      {activeRenderer && (
+        <span className={`status-item renderer ${activeRenderer}`} data-tip={t(activeRenderer === 'gpu' ? 'status.gpuTip' : 'status.cpuTip')}>
+          {activeRenderer === 'gpu' ? '⚡ GPU' : 'CPU'}
+        </span>
+      )}
       <span className={`status-item ${dirty ? 'warn' : 'ok'}`}>{dirty ? t('status.unsaved') : t('status.saved')}</span>
     </footer>
   );
