@@ -36,6 +36,12 @@ export interface Prefs {
   tutorialStep?: number;
   /** 시작할 때 환영 화면 보여주기 (기본 true) */
   showWelcome?: boolean;
+  /** 데스크톱: 하루 한 번 새 버전 확인 (기본 true) */
+  autoUpdateCheck?: boolean;
+  /** 마지막으로 새 버전을 확인한 시각 (ms) */
+  lastUpdateCheck?: number;
+  /** 오류가 나면 개발자에게 자동으로 보내기 (사용자가 직접 켜야 함, 기본 false) */
+  errorReports?: boolean;
 }
 
 export function loadPrefs(): Prefs {

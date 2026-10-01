@@ -13,3 +13,9 @@ playwright-report
 src-tauri/crates/*/Cargo.lock
 src-tauri/crates/*/target
 promo-out
+# 자동 업데이트 서명 개인 키 · 출시 임시 설정 · 오류 보고 저장 파일 (절대 올리지 않기)
+.secrets/
+release-config.json
+error-reports.jsonl
+.env
+.env.local

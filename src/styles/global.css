@@ -2676,6 +2676,59 @@ kbd {
   border: 1px solid rgba(255, 200, 87, 0.5);
 }
 
+.error-box {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  background: rgba(255, 92, 122, 0.12);
+  border: 1px solid rgba(255, 92, 122, 0.5);
+}
+
+/* 업데이트 대화상자 */
+.update-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.update-notes {
+  max-height: 180px;
+  overflow: auto;
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border-radius: var(--radius);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.progress {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--panel-3);
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s;
+}
+
+/* 오류 보고 미리 보기 */
+.report-preview {
+  max-height: 200px;
+  overflow: auto;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border-radius: var(--radius);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 .howto {
   display: flex;
   flex-direction: column;
@@ -2902,6 +2955,17 @@ kbd {
   gap: 4px;
 }
 
+.settings-note {
+  max-width: 280px;
+  text-align: right;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.report-preview {
+  flex-basis: 100%;
+}
+
 .settings-warn {
   flex-basis: 100%;
   max-width: 280px;
@@ -3080,6 +3144,27 @@ kbd {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 6px;
+}
+
+.crash-report {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  font-size: 13px;
+}
+
+.crash-report p {
+  margin: 0;
+}
+
+.crash-always {
+  font-size: 12px;
+  color: var(--text-dim);
 }
 
 .crash-details pre {

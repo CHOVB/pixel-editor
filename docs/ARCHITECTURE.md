@@ -109,8 +109,16 @@ Project (프로젝트 = 파일 하나)
 ② 뼈대 연결            → core/skeleton.ts  (rigid: 행렬 하나 / mesh: 격자 + 가중치)
 ③ 키프레임 움직임       → core/keyframes.ts + core/resample.ts (nearest 또는 RotSprite)
 ④ 효과 스택            → core/effects.ts   (frameDependent 효과는 프레임마다 결과가 다름)
+                         효과 값 키프레임이 있으면 이 프레임의 값을 계산해서 적용 (core/effectKeys.ts)
 ⑤ 블렌드 모드로 합성     → core/blend.ts     (그룹은 자식들을 먼저 합성해서 한 장으로)
 ```
+
+**캐시**: 레이어별 결과, 그룹 합성 결과, 프레임 전체 합성 결과를 "내용 키"(셀 버전 + 설정)로 저장합니다.
+픽셀을 고치면 `markEdited()` 로 버전이 올라가서 자동으로 새로 계산됩니다. 메모리는 384MB 까지만 씁니다.
+
+**GPU 합성 (화면 표시만)**: `platform/glCompositor.ts` 가 ①~④ 결과를 텍스처로 올리고 ⑤ 블렌드를 WebGL2 셰이더로 합니다.
+바뀐 레이어만 다시 올리고, 결과는 2D 캔버스가 `drawImage` 로 확대합니다. WebGL2 가 없거나 꺼져 있으면 CPU 로 자동 전환.
+PNG/GIF 내보내기와 굽기는 항상 CPU 경로(정확히 같은 결과)를 씁니다. 두 결과가 같은지는 E2E 테스트가 비교합니다.
 
 "굽기(bake)"는 이 결과를 실제 픽셀로 바꿔 셀에 넣는 것입니다. (`core/bake.ts`) Aseprite 로 내보낼 때도 같은 결과를 씁니다.
 
@@ -164,6 +172,12 @@ bridge/codex-bridge.mjs (Node)          src-tauri/crates/codex_core (Rust)
 - **환경설정/단축키**: `components/dialogs/SettingsDialog.tsx`, `editor/shortcuts.ts`(사용자 단축키 저장 · 충돌 검사)
 - **최근 파일**: `editor/recentFiles.ts` (브라우저: 파일 핸들, 데스크톱: 경로)
 - **Web Worker**: `workers/exportWorker.ts` (GIF 압축을 화면과 분리)
+- **자동 업데이트 (데스크톱)**: `platform/updates.ts` → Rust `update_*` 명령 → tauri-plugin-updater.
+  latest.json 에서 새 버전을 찾고, 받은 파일은 앱 안의 **공개 키로 서명을 확인한 뒤에만** 설치합니다.
+  공개 키가 없는 빌드에서는 플러그인을 아예 켜지 않습니다. (키 만들기: `npm run updater:keygen`)
+- **오류 보고 (동의한 경우만)**: `platform/errorReport.ts` – 이메일·사용자 폴더 경로를 지우고, 같은 오류는 한 번, 실행당 5개까지.
+  보내는 주소는 빌드할 때 고정(웹 `VITE_ERROR_REPORT_URL`, 데스크톱 `PIXEL_EDITOR_ERROR_REPORT_URL`). 예제 서버: `scripts/error-receiver.mjs`
+- **출시 설정**: `scripts/release/tauri-release-config.mjs` – 저장소 비밀값이 있을 때만 코드 서명·업데이트 파일 만들기를 켭니다.
 
 ---
 

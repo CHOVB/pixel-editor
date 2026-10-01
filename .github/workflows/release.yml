@@ -1,5 +1,17 @@
 # 데스크톱 설치 파일 만들기: v1.2.3 같은 태그를 올리면 Windows / macOS / Linux 설치 파일을 만들어
-# GitHub Release(초안)에 올립니다. (코드 서명 비밀값은 docs/RELEASE.md 참고)
+# GitHub Release(초안)에 올립니다.
+#
+# 저장소 설정(Settings → Secrets and variables → Actions)에 아래 값이 있으면 해당 기능이 켜집니다.
+# 없으면 건너뛰고 "서명 없는" 설치 파일을 만듭니다. 자세한 설명: docs/RELEASE.md
+#
+#   [자동 업데이트]   secrets: TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+#                     vars:    TAURI_UPDATER_PUBKEY, TAURI_UPDATER_ENDPOINT (선택 – tauri.conf.json 값보다 우선)
+#   [Windows 서명]    secrets: WINDOWS_CERTIFICATE (PFX base64), WINDOWS_CERTIFICATE_PASSWORD
+#                 또는 secrets: AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_TENANT_ID
+#                     vars:    AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT, AZURE_SIGNING_PROFILE
+#   [macOS 서명·공증] secrets: APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
+#                              APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID
+#   [오류 보고]       vars:    ERROR_REPORT_URL (https 주소, 사용자가 동의한 경우에만 전송)
 name: Release (desktop)
 
 on:
@@ -20,6 +32,11 @@ jobs:
     runs-on: ${{ matrix.platform }}
     permissions:
       contents: write
+    env:
+      # 비밀값이 "있는지"만 true/false 로 (값 자체는 아래 단계에서만 사용)
+      HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+      HAS_WINDOWS_PFX: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
+      HAS_AZURE_SIGNING: ${{ secrets.AZURE_CLIENT_ID != '' && vars.AZURE_SIGNING_ENDPOINT != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -35,19 +52,64 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - run: npm ci
+
+      # Windows 서명 ① PFX 인증서를 인증서 저장소에 넣고 지문(thumbprint)을 기억
+      - name: Windows 인증서 가져오기 (PFX)
+        if: matrix.platform == 'windows-latest' && env.HAS_WINDOWS_PFX == 'true'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $path = Join-Path $env:RUNNER_TEMP 'cert.pfx'
+          [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $path -CertStoreLocation Cert:\CurrentUser\My -Password $password
+          Remove-Item $path
+          "WINDOWS_CERTIFICATE_THUMBPRINT=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      # Windows 서명 ② Azure Trusted Signing (클라우드 서명 – 요즘 OV/EV 인증서는 파일로 내보낼 수 없는 경우가 많음)
+      - name: Azure Trusted Signing 도구 설치
+        if: matrix.platform == 'windows-latest' && env.HAS_WINDOWS_PFX != 'true' && env.HAS_AZURE_SIGNING == 'true'
+        run: cargo install trusted-signing-cli --locked
+
+      - name: 출시 설정 만들기 (서명 · 업데이트)
+        shell: bash
+        env:
+          TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
+          TAURI_UPDATER_ENDPOINT: ${{ vars.TAURI_UPDATER_ENDPOINT }}
+          AZURE_SIGNING_ENDPOINT: ${{ matrix.platform == 'windows-latest' && env.HAS_WINDOWS_PFX != 'true' && env.HAS_AZURE_SIGNING == 'true' && vars.AZURE_SIGNING_ENDPOINT || '' }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+        run: node scripts/release/tauri-release-config.mjs release-config.json
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # 코드 서명(선택): 아래 비밀값을 저장소 설정에 넣으면 서명된 설치 파일이 만들어집니다.
+          # 자동 업데이트 서명 (npm run updater:keygen 으로 만든 개인 키)
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Azure Trusted Signing 로그인 정보 (쓰는 경우만)
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          # macOS 서명 · 공증 (Apple Developer Program)
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # 오류 보고 주소 (화면: VITE_..., 데스크톱 Rust: PIXEL_EDITOR_...)
+          VITE_ERROR_REPORT_URL: ${{ vars.ERROR_REPORT_URL }}
+          PIXEL_EDITOR_ERROR_REPORT_URL: ${{ vars.ERROR_REPORT_URL }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Pixel Editor ${{ github.ref_name }}
+          releaseBody: '설치 파일을 받아 실행하세요. 자세한 변경 내용은 CHANGELOG.md 를 확인하세요.'
           releaseDraft: true
           prerelease: false
-          args: ${{ matrix.args }}
+          # 자동 업데이트용 latest.json 도 함께 올림 (업데이트 키가 있을 때만 의미 있음)
+          includeUpdaterJson: ${{ env.HAS_UPDATER_KEY == 'true' }}
+          updaterJsonPreferNsis: true
+          args: ${{ matrix.args }} --config release-config.json

@@ -25,6 +25,7 @@ const PixelFixerDialog = lazyNamed(() => import('./PixelFixerDialog'), 'PixelFix
 const SettingsDialog = lazyNamed(() => import('./SettingsDialog'), 'SettingsDialog');
 const LicenseDialog = lazyNamed(() => import('./LicenseDialog'), 'LicenseDialog');
 const FrameTransformDialog = lazyNamed(() => import('./FrameTransformDialog'), 'FrameTransformDialog');
+const UpdateDialog = lazyNamed(() => import('./UpdateDialog'), 'UpdateDialog');
 const CodexDialog = lazyNamed(() => import('./AiDialogs'), 'CodexDialog');
 const PartFillDialog = lazyNamed(() => import('./AiDialogs'), 'PartFillDialog');
 const VfxDialog = lazyNamed(() => import('./ToolDialogs'), 'VfxDialog');
@@ -101,6 +102,8 @@ function DialogSwitch() {
       return <LicenseDialog />;
     case 'frameTransform':
       return <FrameTransformDialog />;
+    case 'update':
+      return <UpdateDialog />;
     default:
       return null;
   }

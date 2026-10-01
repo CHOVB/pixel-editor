@@ -178,6 +178,63 @@ test('GPU (WebGL) canvas matches the CPU renderer for every blend mode', async (
   expect(result.maxDiff).toBeLessThanOrEqual(2);
 });
 
+test('error reports are sent only after the user opts in, without personal paths', async ({ page }) => {
+  const bodies: Record<string, unknown>[] = [];
+  await page.route('**/__error-report', async (route) => {
+    bodies.push(JSON.parse(route.request().postData() ?? '{}'));
+    await route.fulfill({ status: 204 });
+  });
+  await page.goto('/');
+  await page.locator('.welcome .btn.ghost.continue').click();
+  const boom = (msg: string) => page.evaluate((m) => setTimeout(() => { throw new Error(m); }), msg);
+
+  // 1) 동의 전: 오류가 나도 아무것도 보내지 않음
+  await boom('first failure in /Users/zoe/secret.pxe');
+  await page.waitForTimeout(500);
+  expect(bodies).toHaveLength(0);
+
+  // 2) 설정 > 데이터 에서 직접 켬
+  await page.keyboard.press('Control+,');
+  await page.locator('.settings-dialog .tabs button', { hasText: '데이터' }).click();
+  const row = page.locator('.settings-row', { hasText: '오류 자동 보내기' });
+  await row.locator('.btn', { hasText: '보내는 내용 보기' }).click();
+  await expect(row.locator('.report-preview')).toContainText('"app": "pixel-editor"');
+  await row.locator('.toggle').click();
+  await page.keyboard.press('Escape');
+
+  // 3) 동의 후: 개인 경로를 지운 보고서 1개
+  await boom('second failure in /Users/zoe/secret.pxe');
+  await expect.poll(() => bodies.length).toBe(1);
+  expect(bodies[0].message).toBe('second failure in /Users/<user>/secret.pxe');
+  expect(bodies[0].app).toBe('pixel-editor');
+  expect((bodies[0].context as Record<string, unknown>).tool).toBe('pencil');
+  expect(JSON.stringify(bodies[0])).not.toContain('zoe');
+});
+
+test('a screen crash shows the recovery screen, can be reported and recovered', async ({ page }) => {
+  const bodies: Record<string, unknown>[] = [];
+  await page.route('**/__error-report', async (route) => {
+    bodies.push(JSON.parse(route.request().postData() ?? '{}'));
+    await route.fulfill({ status: 204 });
+  });
+  await page.goto('/');
+  await page.locator('.welcome .btn.ghost.continue').click();
+  await page.evaluate(() => (window as unknown as { __pxeCrashTest: () => void }).__pxeCrashTest());
+  const screen = page.locator('.crash-screen');
+  await expect(screen).toBeVisible();
+  await expect(screen.locator('.crash-saved, .crash-unsaved')).not.toHaveText('');
+  // 동의(버튼)한 경우에만 전송
+  expect(bodies).toHaveLength(0);
+  await screen.locator('.btn', { hasText: '개발자에게 보내기' }).click();
+  await expect(screen).toContainText('보냈어요');
+  expect(bodies).toHaveLength(1);
+  expect(bodies[0].message).toBe('e2e render crash in /Users/<user>/work.pxe');
+  expect((bodies[0].context as Record<string, unknown>).where).toBe('render');
+  // 다시 시도 → 에디터로 돌아옴
+  await screen.locator('.btn', { hasText: '다시 시도' }).click();
+  await expect(page.locator('.main-canvas')).toBeVisible();
+});
+
 test('cleans up an AI-made pixel image to true pixel size', async ({ page }) => {
   await page.goto('/');
   await page.locator('.welcome .btn.ghost.continue').click();

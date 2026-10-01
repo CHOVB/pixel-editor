@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { bridgeUrl, setBridgeUrl } from '../../ai/codex';
 import { DEFAULT_AUTOSAVE_SECONDS, startAutosave } from '../../editor/fileActions';
+import { reportContext } from '../../editor/crashGuard';
 import { clearRecentFiles } from '../../editor/recentFiles';
 import {
   bindingFromEvent,
@@ -24,6 +25,8 @@ import {
 import { useT, type TKey } from '../../i18n';
 import { notify } from '../../store/actions';
 import { setState, useEditor, type Theme } from '../../store/editorStore';
+import { isDesktop } from '../../platform/desktop';
+import { buildReport, reportingAvailable } from '../../platform/errorReport';
 import { loadPrefs, resetPrefs, savePrefs } from '../../store/prefs';
 import { Toggle } from '../ui';
 import { closeDialog, Modal } from './Modal';
@@ -84,6 +87,7 @@ function GeneralTab() {
   const renderer = useEditor((s) => s.renderer);
   const activeRenderer = useEditor((s) => s.activeRenderer);
   const [showWelcome, setShowWelcome] = useState(loadPrefs().showWelcome !== false);
+  const [autoUpdate, setAutoUpdate] = useState(loadPrefs().autoUpdateCheck !== false);
   return (
     <div className="settings-list">
       <Row label={t('menu.language')}>
@@ -125,6 +129,22 @@ function GeneralTab() {
         </div>
         {renderer === 'gpu' && activeRenderer === 'cpu' && <small className="settings-warn">{t('settings.rendererUnavailable')}</small>}
       </Row>
+      {isDesktop() && (
+        <Row label={t('settings.autoUpdate')} tip={t('settings.autoUpdateTip')}>
+          <Toggle
+            checked={autoUpdate}
+            onChange={(v) => {
+              setAutoUpdate(v);
+              savePrefs({ autoUpdateCheck: v });
+            }}
+          >
+            {autoUpdate ? t('settings.on') : t('settings.off')}
+          </Toggle>
+          <button type="button" className="btn small" onClick={() => setState({ dialog: { id: 'update' } })}>
+            {t('menu.checkUpdates')}
+          </button>
+        </Row>
+      )}
       <Row label={t('settings.showWelcome')}>
         <Toggle
           checked={showWelcome}
@@ -298,8 +318,37 @@ function AiTab() {
 
 function DataTab() {
   const t = useT();
+  const [canReport, setCanReport] = useState<boolean | null>(null);
+  const [sendErrors, setSendErrors] = useState(loadPrefs().errorReports === true);
+  const [showSample, setShowSample] = useState(false);
+  useEffect(() => {
+    void reportingAvailable().then(setCanReport);
+  }, []);
   return (
     <div className="settings-list">
+      <Row label={t('settings.errorReports')} tip={t('settings.errorReportsTip')}>
+        {canReport === false ? (
+          <small className="settings-note">{t('settings.errorReportsUnavailable')}</small>
+        ) : (
+          <Toggle
+            checked={sendErrors}
+            onChange={(v) => {
+              setSendErrors(v);
+              savePrefs({ errorReports: v });
+            }}
+          >
+            {sendErrors ? t('settings.on') : t('settings.off')}
+          </Toggle>
+        )}
+        <button type="button" className="btn small ghost" onClick={() => setShowSample((v) => !v)}>
+          {t('settings.errorReportsSample')}
+        </button>
+        {showSample && (
+          <pre className="report-preview">
+            {JSON.stringify(buildReport({ message: 'TypeError: example', stack: 'at draw (app.js:1:2)' }, reportContext()), null, 2)}
+          </pre>
+        )}
+      </Row>
       <Row label={t('settings.recentFiles')}>
         <button
           type="button"

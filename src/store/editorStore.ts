@@ -64,7 +64,8 @@ export type DialogId =
   | 'cleanup'
   | 'settings'
   | 'license'
-  | 'frameTransform';
+  | 'frameTransform'
+  | 'update';
 
 export interface DialogState {
   id: DialogId;

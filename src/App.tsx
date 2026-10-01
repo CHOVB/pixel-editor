@@ -28,12 +28,13 @@ import { TutorialPanel } from './components/TutorialPanel';
 import { TooltipLayer } from './components/ui';
 import { pasteImageBlob, pasteInternal } from './editor/clipboard';
 import { installCrashGuard } from './editor/crashGuard';
+import { backgroundUpdateCheck } from './platform/updates';
 import { confirmDiscard, DEFAULT_AUTOSAVE_SECONDS, importImageFileAsLayer, openFileObject, startAutosave } from './editor/fileActions';
 import { loadRecentFiles } from './editor/recentFiles';
 import { desktopLaunchFile } from './platform/desktop';
 import { handleKeyDown } from './editor/shortcuts';
 import { usePlayback } from './editor/usePlayback';
-import { useT } from './i18n';
+import { tr, useT } from './i18n';
 import { notify } from './store/actions';
 import { getState, setState, useEditor, type Theme } from './store/editorStore';
 import { loadPrefs, savePrefs } from './store/prefs';
@@ -129,6 +130,18 @@ function useGlobalEvents() {
     startAutosave(loadPrefs().autosaveSeconds ?? DEFAULT_AUTOSAVE_SECONDS);
     void loadRecentFiles();
     return installCrashGuard();
+  }, []);
+
+  // 6-0) 데스크톱 앱: 하루 한 번 조용히 새 버전 확인 → 있으면 알림 (설정에서 끌 수 있음)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void backgroundUpdateCheck().then((info) => {
+        if (!info) return;
+        if (getState().dialog) notify(tr('update.availableToast', { version: info.version ?? '' }), 'info');
+        else setState({ dialog: { id: 'update', payload: { info } } });
+      });
+    }, 4000);
+    return () => clearTimeout(timer);
   }, []);
 
   // 6-1) 설치한 앱(PWA)이나 데스크톱 앱을 .pxe / .aseprite 파일 더블클릭으로 열었을 때
@@ -279,6 +292,20 @@ export function App() {
       <ToastHost />
       <TooltipLayer />
       {dragging && <div className="drop-overlay">{t('drop.hint')}</div>}
+      {import.meta.env.VITE_E2E_HOOKS === '1' && <CrashProbe />}
     </div>
   );
+}
+
+/**
+ * 자동 점검(E2E) 빌드에서만 들어가는 "일부러 오류 내기" 장치.
+ * 오류 복구 화면이 제대로 나오는지 시험합니다. 일반 빌드에서는 코드째 빠집니다.
+ */
+function CrashProbe() {
+  const [boom, setBoom] = useState(false);
+  useEffect(() => {
+    (window as unknown as { __pxeCrashTest?: () => void }).__pxeCrashTest = () => setBoom(true);
+  }, []);
+  if (boom) throw new Error('e2e render crash in /Users/kim/work.pxe');
+  return null;
 }

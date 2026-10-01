@@ -17,7 +17,9 @@
     "desktop:build": "tauri build",
     "rust:test": "cd src-tauri/crates/codex_core && cargo test",
     "license": "node scripts/license-tool.mjs",
-    "promo": "node scripts/promo/record-promo.mjs promo-out"
+    "promo": "node scripts/promo/record-promo.mjs promo-out",
+    "updater:keygen": "node scripts/updater-keygen.mjs",
+    "error-receiver": "node scripts/error-receiver.mjs"
   },
   "dependencies": {
     "gifenc": "^1.0.3",

@@ -9,6 +9,7 @@ import { createParticleSettings, PARTICLE_PRESET_IDS } from '../core/particles';
 import { copySelection, cutSelection, pasteFromMenu } from '../editor/clipboard';
 import { confirmDiscard, importImageAsLayer, openFile, openRecent, saveProject } from '../editor/fileActions';
 import { useRecent } from '../editor/recentFiles';
+import { isDesktop } from '../platform/desktop';
 import { openSample, SAMPLE_IDS } from '../editor/samples';
 import { importReferenceImage } from '../editor/importActions';
 import { shortcutLabel as sk } from '../editor/shortcuts';
@@ -305,6 +306,7 @@ function useMenus(): Menu[] {
         { label: 'menu.langEn', checked: language === 'en', run: () => setState({ language: 'en' }) },
         'sep',
         { label: 'menu.settings', run: () => openDialog('settings') },
+        ...(isDesktop() ? [{ label: 'menu.checkUpdates', run: () => openDialog('update') } as MenuItem] : []),
         { label: 'license.title', run: () => openDialog('license') },
         { label: 'menu.about', run: () => openDialog('about') },
       ],

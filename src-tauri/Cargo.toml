@@ -11,9 +11,20 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
+# 자동 업데이트 (공개 키가 설정된 경우에만 켜짐 – docs/RELEASE.md)
+tauri-plugin-updater = "2"
+# 오류 보고 전송 (사용자가 동의했고, 빌드할 때 보고 주소가 정해진 경우에만)
+# (업데이트 플러그인과 같은 버전/설정을 써서 라이브러리가 두 번 들어가지 않게 합니다)
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 base64 = "0.22"
 codex_core = { path = "crates/codex_core" }
+
+[dev-dependencies]
+# 업데이트 전체 흐름 시험(가짜 앱 실행기)용 – 배포 파일에는 들어가지 않습니다
+tauri = { version = "2", features = ["test"] }
 
 [profile.release]
 # 배포용: 작고 빠르게

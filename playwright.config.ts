@@ -24,6 +24,9 @@ export default defineConfig({
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } }],
   webServer: {
     command: `npm run build && npx vite preview --port ${PORT} --strictPort`,
+    // 오류 보고 기능을 시험하려고 보고 주소를 넣어 빌드합니다. (테스트가 이 주소로 가는 요청을 가로챔)
+    // VITE_E2E_HOOKS: 오류 복구 화면 시험용 장치(일반 빌드에는 없음)
+    env: { VITE_ERROR_REPORT_URL: `http://localhost:${PORT}/__error-report`, VITE_E2E_HOOKS: '1' },
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

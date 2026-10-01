@@ -32,10 +32,41 @@
     "category": "GraphicsAndDesign",
     "shortDescription": "Pixel art & animation editor",
     "longDescription": "초보자도 바로 쓰는 픽셀아트 · 도트 애니메이션 에디터. 자동 중간 프레임, 뼈대 애니메이션, 효과, VFX, Codex(ChatGPT 로그인) 연동.",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "fileAssociations": [
-      { "ext": ["pxe"], "name": "Pixel Editor Project", "role": "Editor", "mimeType": "application/json" },
-      { "ext": ["aseprite", "ase"], "name": "Aseprite", "role": "Editor" }
+      {
+        "ext": [
+          "pxe"
+        ],
+        "name": "Pixel Editor Project",
+        "role": "Editor",
+        "mimeType": "application/json"
+      },
+      {
+        "ext": [
+          "aseprite",
+          "ase"
+        ],
+        "name": "Aseprite",
+        "role": "Editor"
+      }
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "",
+      "endpoints": [
+        "https://github.com/CHOVB/pixel-editor/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

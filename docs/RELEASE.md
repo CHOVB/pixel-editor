@@ -60,16 +60,83 @@ npm run desktop:build   # 설치 파일 생성 → src-tauri/target/release/bund
 git tag v1.0.0 && git push origin v1.0.0
 ```
 
-### 코드 서명 (판매용이라면 강력 추천)
-서명하지 않으면 Windows "알 수 없는 게시자" 경고, macOS "확인되지 않은 개발자" 경고가 뜹니다.
-- **macOS**: Apple Developer Program 가입 → Developer ID 인증서 → 저장소 Secrets 에
-  `APPLE_CERTIFICATE`(base64), `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`(앱 암호), `APPLE_TEAM_ID`
-- **Windows**: 코드 서명 인증서(OV/EV) 구매 → https://tauri.app/distribute/sign/windows/ 참고
+### 출시 작업이 켜 주는 기능 한눈에 보기
 
-### 자동 업데이트 (선택)
-Tauri updater 플러그인을 쓰면 앱이 새 버전을 스스로 받습니다. 업데이트 서명 키를 만들고(`npx tauri signer generate`),
-릴리스 주소를 `tauri.conf.json` 에 넣어야 하므로 판매/배포 주소가 정해진 뒤에 연결합니다.
-https://tauri.app/plugin/updater/
+`release.yml` 은 저장소 **Settings → Secrets and variables → Actions** 에 값이 있을 때만 해당 기능을 켭니다.
+값이 하나도 없어도 출시 작업은 성공하고, "서명 없는" 설치 파일이 만들어집니다.
+
+| 기능 | Secrets (비밀값) | Variables (공개 값) |
+| --- | --- | --- |
+| 자동 업데이트 | `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | (선택) `TAURI_UPDATER_PUBKEY`, `TAURI_UPDATER_ENDPOINT` |
+| Windows 서명 – PFX | `WINDOWS_CERTIFICATE`(base64), `WINDOWS_CERTIFICATE_PASSWORD` | – |
+| Windows 서명 – Azure | `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID` | `AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT`, `AZURE_SIGNING_PROFILE` |
+| macOS 서명·공증 | `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | – |
+| 오류 보고 | – | `ERROR_REPORT_URL` (https) |
+
+설정이 어떻게 합쳐지는지는 `scripts/release/tauri-release-config.mjs` 에 있습니다. (비밀값은 결과 파일에 쓰지 않음)
+
+### 자동 업데이트 켜기 (처음 한 번)
+
+```bash
+npm run updater:keygen          # 키 만들기 + tauri.conf.json 에 공개 키 넣기
+```
+1. 개인 키 `.secrets/updater.key` 를 **안전한 곳(비밀번호 관리자 등)에 백업**하세요. 잃어버리면 이미 설치한 사용자에게 업데이트를 보낼 수 없습니다.
+   (`.secrets/` 는 `.gitignore` 에 들어 있어서 git 에 올라가지 않습니다)
+2. GitHub Secrets 에 `TAURI_SIGNING_PRIVATE_KEY`(파일 내용 전체), `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`(암호, 없으면 빈 값) 를 넣습니다.
+3. 바뀐 `src-tauri/tauri.conf.json`(공개 키)을 커밋하고, 버전을 올린 뒤 태그를 올립니다. → 릴리스 초안에 설치 파일 + `.sig` + `latest.json` 이 올라갑니다.
+4. 릴리스 초안을 **Publish** 하면, 사용자 앱이 하루 한 번 확인할 때(또는 도움말 > 업데이트 확인) 새 버전을 찾습니다.
+
+알아 둘 점
+- 업데이트 주소는 기본으로 `https://github.com/<저장소>/releases/latest/download/latest.json` 입니다. **비공개 저장소는 릴리스 파일을 받을 수 없으니**
+  공개 저장소나 별도 서버(예: Cloudflare R2, S3)를 쓰고 `TAURI_UPDATER_ENDPOINT` 변수로 주소를 바꾸세요. (https 만 허용)
+- 받은 파일은 앱 안의 공개 키로 **서명을 확인한 뒤에만** 설치됩니다. 변조된 파일은 거부됩니다.
+- 공개 키가 비어 있는 빌드는 업데이트 기능이 꺼진 채로 동작합니다. (메뉴에서 "자동 업데이트가 꺼져 있어요" 안내)
+- 실제로 확인해 보기 (개발자용):
+  ```bash
+  # 시험용 키로 서명한 가짜 업데이트를 내 컴퓨터 서버에 올려 두고
+  UPDATER_TEST_PUBKEY="$(cat .secrets/updater.key.pub)" UPDATER_TEST_ENDPOINT=http://127.0.0.1:8787/latest.json \
+    cargo test --manifest-path src-tauri/Cargo.toml -- --ignored
+  ```
+
+![업데이트 대화상자](media/update-dialog.jpg)
+
+### 코드 서명 (판매용이라면 강력 추천)
+
+서명하지 않으면 Windows "알 수 없는 게시자"(SmartScreen) 경고, macOS "확인되지 않은 개발자" 경고가 뜹니다.
+**인증서는 판매자(개인/회사) 명의로 직접 구매·발급**해야 하며, 이 저장소에는 넣을 수 없습니다. 준비되면 비밀값만 등록하면 됩니다.
+
+**macOS** (Apple Developer Program, 연 $99)
+1. Developer ID Application 인증서를 만들고 `.p12` 로 내보냅니다.
+2. `APPLE_CERTIFICATE`(= `base64 -i cert.p12`), `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`(예: `Developer ID Application: 홍길동 (TEAMID)`),
+   `APPLE_ID`, `APPLE_PASSWORD`(앱 전용 암호), `APPLE_TEAM_ID` 를 넣으면 서명 + 공증(notarize)까지 자동으로 됩니다.
+
+**Windows** – 둘 중 하나
+- **A. PFX 파일이 있는 인증서**: `WINDOWS_CERTIFICATE`(= PFX 파일을 base64 로), `WINDOWS_CERTIFICATE_PASSWORD`
+  ```powershell
+  [Convert]::ToBase64String([IO.File]::ReadAllBytes("cert.pfx")) | Set-Clipboard
+  ```
+- **B. Azure Trusted Signing (추천)**: 요즘 OV/EV 인증서는 USB 토큰에 들어 있어 파일로 내보낼 수 없는 경우가 많습니다.
+  Azure 에서 Trusted Signing 계정 + 인증서 프로필을 만들고, 서명 권한이 있는 앱 등록(서비스 주체)을 만든 뒤
+  Secrets `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID` 와 Variables `AZURE_SIGNING_ENDPOINT`(예: `https://wus2.codesigning.azure.net`),
+  `AZURE_SIGNING_ACCOUNT`, `AZURE_SIGNING_PROFILE` 을 넣으세요. (https://tauri.app/distribute/sign/windows/)
+
+**Linux**: 별도 서명 없이 배포하는 경우가 대부분입니다. (`.deb`/`.rpm`/`.AppImage`)
+
+### 오류 보고 켜기 (선택)
+
+사용자가 **직접 동의한 경우에만** 오류 내용이 전송됩니다. (설정 > 데이터 > 오류 자동 보내기, 또는 오류 화면의 "개발자에게 보내기")
+보내는 것: 오류 메시지·위치(stack), 앱 버전, 운영체제·브라우저 종류, 언어, 쓰던 도구 / 보내지 않는 것: 그림, 프로젝트, 파일 이름, 이메일, 폴더 경로.
+
+1. 받는 서버를 실행합니다. 예제: `npm run error-receiver` (기본 `http://127.0.0.1:8790/report`, 결과는 `error-reports.jsonl`)
+   ```bash
+   HOST=0.0.0.0 PORT=8790 ALLOWED_ORIGINS=https://my-editor.example.com REPORT_FILE=/data/reports.jsonl node scripts/error-receiver.mjs
+   ```
+   실제 운영에서는 https 주소(리버스 프록시) 뒤에 두세요. IP 주소는 저장하지 않습니다.
+2. 빌드할 때 주소를 알려 줍니다.
+   - 웹: `.env` 에 `VITE_ERROR_REPORT_URL=https://reports.example.com/report` (`.env.example` 참고)
+   - 데스크톱: `PIXEL_EDITOR_ERROR_REPORT_URL=https://reports.example.com/report npm run desktop:build`
+   - GitHub 릴리스: 저장소 Variables 에 `ERROR_REPORT_URL`
+3. 주소가 없는 빌드에서는 오류 보고 기능이 보이지 않고, "오류 내용 복사"만 쓸 수 있습니다.
 
 ---
 
@@ -113,7 +180,8 @@ npm run license -- verify ./license-private.json PXE1.xxxx.yyyy
 ## 5. 개인정보 · 상표
 
 - 프로그램은 작업 내용을 외부로 보내지 않습니다. 예외: 사용자가 AI 기능을 실행할 때 그 작업에 필요한 이미지/설명만 Codex(OpenAI)로 전송됩니다.
-- 오류 보고는 자동 전송하지 않고 "오류 내용 복사" 버튼만 제공합니다.
+- 오류 보고는 기본으로 꺼져 있고, 사용자가 동의한 경우에만 개인 정보를 지운 오류 내용을 보냅니다. (위 "오류 보고 켜기")
+- 데스크톱 앱은 하루 한 번 업데이트 주소(latest.json)에 접속해 새 버전을 확인합니다. (설정에서 끌 수 있음, 개인 정보 전송 없음)
 - 자동 저장/최근 파일/설정은 사용자의 브라우저(IndexedDB/localStorage)에만 저장됩니다.
 - 프로그램 이름 "Pixel Editor" 는 임시 이름입니다. 판매 전 상표 검색 후 고유한 이름으로 바꾸는 것을 추천합니다.
 - 포함된 오픈소스 라이브러리(React, Zustand, gifenc, gifuct-js, Tauri 등)의 라이선스 고지를 배포 페이지나 "정보" 창에 넣어 주세요.
