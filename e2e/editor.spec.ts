@@ -85,6 +85,25 @@ test('moves every frame at once with the frame transform dialog', async ({ page 
   await expect(page.locator('.toast').last()).toContainText('프레임 일괄 변형');
 });
 
+test('effect values can be keyframed', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.welcome .btn.ghost.continue').click();
+  for (let i = 0; i < 5; i++) await page.keyboard.press('n');
+  expect(await frameCount(page)).toBe(6);
+  await page.locator('.tl-frame-head').first().click();
+  await menu(page, '효과', '효과 패널 열기');
+  await page.locator('.fx-presets .chip', { hasText: '번쩍 → 사라짐' }).click();
+  await expect(page.locator('.tl-cell .kf.fx')).toHaveCount(2);
+  await expect(page.locator('.fx-key-list')).toHaveText('◆1◆4');
+  // 3번 프레임에서 값을 바꾸면 키가 자동으로 생겨요
+  await page.locator('.tl-frame-head').nth(2).click();
+  const amount = page.locator('.fx-param.keyed input[type="number"], .fx-param.keyed [role="spinbutton"]').first();
+  await amount.fill('70');
+  await amount.press('Enter');
+  await expect(page.locator('.tl-cell .kf.fx')).toHaveCount(3);
+  await expect(page.locator('.fx-key-list')).toHaveText('◆1◆3◆4');
+});
+
 test('cleans up an AI-made pixel image to true pixel size', async ({ page }) => {
   await page.goto('/');
   await page.locator('.welcome .btn.ghost.continue').click();

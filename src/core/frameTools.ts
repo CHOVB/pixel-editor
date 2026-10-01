@@ -7,6 +7,7 @@
  */
 import { celKey } from './celKey';
 import { createBuffer } from './pixels';
+import { layerHolds } from './project';
 import type { Project } from './types';
 
 export interface CelTransform {
@@ -75,7 +76,7 @@ export function transformCelBuffer(src: Uint8ClampedArray, w: number, h: number,
 
 /**
  * 프레임마다 그림이나 움직임이 "바뀌는지" 한 번에 계산합니다. (프레임 수 × 레이어 수)
- *  - 어떤 레이어든 키프레임(◆)이 있거나
+ *  - 어떤 레이어든 키프레임(◆)이나 효과 값 키가 있거나
  *  - 뼈 자세 키가 있거나
  *  - 어떤 그림 레이어든 앞 프레임과 다른 그림이 시작되는 프레임
  * 첫 프레임은 항상 true 입니다.
@@ -90,10 +91,11 @@ export function changeFrames(p: Project): boolean[] {
     if (i !== undefined) out[i] = true;
   };
   for (const layer of p.layers) for (const k of layer.anim?.keys ?? []) mark(k.frameId);
+  for (const layer of p.layers) for (const fx of layer.effects) if (fx.enabled) for (const k of fx.keys ?? []) mark(k.frameId);
   for (const b of p.bones) for (const k of b.keys) mark(k.frameId);
   for (const layer of p.layers) {
     if (layer.kind !== 'pixel') continue;
-    const holds = !!(layer.anim && layer.anim.keys.length > 0) || !!layer.bind;
+    const holds = layerHolds(layer);
     let shown: Uint8ClampedArray | undefined;
     for (let i = 0; i < n; i++) {
       const own = p.cels[celKey(layer.id, p.frames[i].id)];

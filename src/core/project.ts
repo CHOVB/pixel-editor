@@ -10,6 +10,7 @@
  */
 import { celKey } from './celKey';
 import { effectDef } from './effects';
+import { effectKeyAt, isEffectAnimated, removeEffectKey, sanitizeEffectKeys } from './effectKeys';
 import {
   cloneBuffer,
   createBuffer,
@@ -75,7 +76,13 @@ export function normalizeLayer(raw: Partial<Layer> & { id: string; name: string 
     expanded: raw.expanded !== false,
     guide: !!raw.guide,
     anim: raw.anim ?? null,
-    effects: raw.effects ?? [],
+    effects: (raw.effects ?? []).map((e) => {
+      const keys = sanitizeEffectKeys(e.keys);
+      const fx = { ...e, params: e.params ?? {} };
+      if (keys) fx.keys = keys;
+      else delete fx.keys;
+      return fx;
+    }),
     bind: raw.bind ?? null,
     reference: raw.reference ?? null,
     particles: raw.particles ?? null,
@@ -144,12 +151,12 @@ export function celHasContent(p: Project, layerId: string, frameId: string): boo
 
 /**
  * 레이어가 빈 프레임에서 앞 그림을 계속 쓰는지(hold):
- * 키프레임 움직임, 뼈대 연결, 또는 프레임마다 달라지는 효과(흔들림·숨쉬기 등)가 있으면 그렇습니다.
+ * 키프레임 움직임, 뼈대 연결, 프레임마다 달라지는 효과(흔들림·숨쉬기 등), 또는 효과 값 키프레임이 있으면 그렇습니다.
  */
 export function layerHolds(layer: Layer): boolean {
   if (layer.anim && layer.anim.keys.length > 0) return true;
   if (layer.bind) return true;
-  return layer.effects.some((e) => e.enabled && !!effectDef(e.type)?.frameDependent);
+  return layer.effects.some((e) => e.enabled && (!!effectDef(e.type)?.frameDependent || isEffectAnimated(e)));
 }
 
 /**
@@ -528,6 +535,7 @@ export function removeFrame(p: Project, frameIndex: number): boolean {
   for (const l of p.layers) {
     delete p.cels[celKey(l.id, frame.id)];
     if (l.anim) l.anim.keys = l.anim.keys.filter((k) => k.frameId !== frame.id);
+    for (const fx of l.effects) if (effectKeyAt(fx, frame.id)) removeEffectKey(fx, frame.id);
   }
   for (const b of p.bones) b.keys = b.keys.filter((k) => k.frameId !== frame.id);
   shiftTagsForRemove(p, frameIndex);

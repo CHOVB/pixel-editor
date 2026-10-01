@@ -11,9 +11,10 @@
  * "이미지 → 픽셀아트 변환" 기능에서도 그대로 재사용합니다.
  */
 import { colorToHex, hexToColor, hsvToRgb, rgbToHsv, unpackColor } from './color';
+import { effectParamsAt, isEffectAnimated } from './effectKeys';
 import { getPreset, presetToColors } from './palettes';
 import { cloneBuffer, contentBounds, createBuffer, resizeBuffer } from './pixels';
-import type { Color, Effect, EffectParamValue, Project } from './types';
+import type { Color, EaseKind, Effect, EffectParamValue, Project } from './types';
 
 /* ------------------------------------------------------------------ */
 /* 효과 정의 형식                                                        */
@@ -917,6 +918,8 @@ export interface EffectPreset {
   type: string;
   group: EffectGroup;
   params: Record<string, EffectParamValue>;
+  /** 효과 값 키프레임 (offset = 지금 프레임에서 몇 프레임 뒤. 음수 키는 앞 프레임이 있을 때만 찍어요) */
+  keys?: { offset: number; values: Record<string, number>; ease?: EaseKind }[];
 }
 
 export const EFFECT_PRESETS: EffectPreset[] = [
@@ -933,6 +936,27 @@ export const EFFECT_PRESETS: EffectPreset[] = [
   { id: 'hitShake', type: 'shake', group: 'motion', params: { amplitude: 1 } },
   { id: 'invincible', type: 'flicker', group: 'motion', params: { interval: 2, opacity: 20 } },
   { id: 'hitFlash', type: 'colorOverlay', group: 'color', params: { color: '#ffffffff', amount: 100 } },
+  {
+    id: 'flashFade',
+    type: 'colorOverlay',
+    group: 'color',
+    params: { color: '#ffffffff', amount: 100 },
+    keys: [
+      { offset: -1, values: { amount: 0 }, ease: 'step' },
+      { offset: 0, values: { amount: 100 }, ease: 'easeOut' },
+      { offset: 3, values: { amount: 0 } },
+    ],
+  },
+  {
+    id: 'fadeIn',
+    type: 'colorAdjust',
+    group: 'color',
+    params: { hue: 0, saturation: 0, brightness: -100, contrast: 0 },
+    keys: [
+      { offset: 0, values: { brightness: -100 }, ease: 'easeInOut' },
+      { offset: 5, values: { brightness: 0 } },
+    ],
+  },
   { id: 'nightTone', type: 'colorAdjust', group: 'color', params: { hue: 20, saturation: -30, brightness: -25, contrast: 0 } },
   { id: 'retroPalette', type: 'indexPalette', group: 'pixel', params: { palette: 'pico8', dither: 'bayer4', strength: 40 } },
   { id: 'gameboy', type: 'indexPalette', group: 'pixel', params: { palette: 'gameboy', dither: 'bayer4', strength: 60 } },
@@ -950,25 +974,28 @@ export function defaultParams(type: string): Record<string, EffectParamValue> {
   return params;
 }
 
-/** 효과 목록을 차례로 적용합니다. (켜진 것만) */
+/** 효과 목록을 차례로 적용합니다. (켜진 것만, 효과 값 키프레임이 있으면 이 프레임의 값으로) */
 export function applyEffects(src: Uint8ClampedArray, w: number, h: number, effects: Effect[], ctx: EffectContext): Uint8ClampedArray {
   let buf = src;
   for (const e of effects) {
     if (!e.enabled) continue;
     const def = effectDef(e.type);
     if (!def) continue;
-    buf = def.apply(buf, w, h, { ...defaultParams(e.type), ...e.params }, ctx);
+    buf = def.apply(buf, w, h, effectParamsAt(ctx.project, e, ctx.frameIndex), ctx);
   }
   return buf;
 }
 
-/** 캐시 키: 효과 설정 + (필요하면) 프레임 번호와 팔레트 */
+/**
+ * 캐시 키: 효과 설정 + (필요하면) 프레임 번호와 팔레트.
+ * 키프레임이 있는 효과는 "이 프레임에서 계산된 값"을 넣어서, 값이 같은 프레임끼리는 결과를 함께 씁니다.
+ */
 export function effectsKey(effects: Effect[], frameIndex: number, p: Project): string {
   let key = '';
   for (const e of effects) {
     if (!e.enabled) continue;
     const def = effectDef(e.type);
-    key += `${e.type}${JSON.stringify(e.params)}`;
+    key += `${e.type}${JSON.stringify(isEffectAnimated(e) ? effectParamsAt(p, e, frameIndex) : e.params)}`;
     if (def?.frameDependent) key += `@${frameIndex}`;
     if (def?.usesPalette) key += `#${p.palette.map((c) => colorToHex(c)).join('')}`;
     key += ';';

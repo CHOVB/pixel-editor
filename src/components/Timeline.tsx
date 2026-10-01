@@ -6,7 +6,7 @@
  *  칸(셀) 표시
  *   ●  그림이 있음
  *   ━  앞 프레임과 같은 그림(링크)   ┄  앞 그림을 계속 사용(움직이는 레이어)
- *   ◆  키프레임(움직임 기록)
+ *   ◆  키프레임(움직임 기록), 보라 ◆ = 효과 값 키프레임
  *
  *  - 칸 클릭: 그 레이어/프레임 선택 · Shift+클릭: 프레임 범위 선택
  *  - 오른쪽 클릭: 메뉴 (키프레임, 링크, 비우기 ...)
@@ -14,6 +14,7 @@
  *  - 레이어 이름: 더블클릭으로 이름 변경, 끌어서 순서 변경(그룹 가운데에 놓으면 그룹 안으로)
  */
 import { useEffect, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react';
+import { hasEffectKeyAt } from '../core/effectKeys';
 import { keyAt } from '../core/keyframes';
 import { flattenTree, getCel, isLinkedToPrev, sourceFrameId, type TreeRow } from '../core/project';
 import { compositeFrame } from '../core/render';
@@ -530,6 +531,7 @@ export function Timeline() {
               const linked = isLinkedToPrev(project, layer.id, i);
               const held = !own && layer.kind === 'pixel' && !!sourceFrameId(project, layer, i);
               const key = keyAt(layer.anim, frame.id);
+              const fxKey = hasEffectKeyAt(layer.effects, frame.id);
               const inRange = i >= rangeA && i <= rangeB;
               const showDot = layer.kind === 'pixel' && !!own && !linked;
               return (
@@ -543,6 +545,11 @@ export function Timeline() {
                 >
                   {showDot && <span className="dot" />}
                   {key && <span className="kf">◆</span>}
+                  {fxKey && (
+                    <span className="kf fx" data-tip={t('timeline.fxKeyTip')}>
+                      ◆
+                    </span>
+                  )}
                 </div>
               );
             }),

@@ -301,6 +301,12 @@ kbd {
   border-radius: var(--radius);
   color: var(--text-dim);
   flex: none;
+  /* 브라우저 기본 버튼 여백(좌우 6px)이 작은 버튼의 아이콘을 찌그러뜨리지 않게 */
+  padding: 0;
+}
+
+.icon-btn svg {
+  flex: none;
 }
 
 .icon-btn:hover:not(:disabled) {
@@ -2188,6 +2194,12 @@ kbd {
   line-height: 1;
 }
 
+.tl-cell .kf.fx {
+  right: auto;
+  left: 2px;
+  color: #c58cff;
+}
+
 .tl-cell .kf.bone {
   position: static;
   font-size: 11px;
@@ -2420,6 +2432,65 @@ kbd {
 .fx-param input[type='range'] {
   flex: 1;
   min-width: 60px;
+}
+
+/* 효과 값 키프레임 */
+.fx-key-mark {
+  margin-left: 3px;
+  color: #c58cff;
+  font-size: 9px;
+}
+
+.fx-param.keyed > span:first-child {
+  color: var(--text);
+}
+
+.fx-head .fx-key-btn.active {
+  color: #c58cff;
+}
+
+.fx-card.animated {
+  border-color: color-mix(in srgb, #c58cff 45%, var(--border));
+}
+
+.fx-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 4px 6px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, #c58cff 8%, transparent);
+}
+
+.fx-keys-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fx-keys .icon-btn.tiny {
+  width: 20px;
+  height: 20px;
+}
+
+.fx-key-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 11px;
+  color: #c58cff;
+  font-variant-numeric: tabular-nums;
+}
+
+.fx-key-list .here {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.note.tiny {
+  font-size: 11px;
+  margin: 0;
 }
 
 .bone-list {

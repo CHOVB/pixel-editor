@@ -90,6 +90,18 @@ export interface TransformTrack {
 
 export type EffectParamValue = number | string | boolean;
 
+/**
+ * 효과 값 키프레임: 특정 프레임에서의 숫자 설정값들.
+ * 예) 1번 프레임 "하얗게 100%" → 4번 프레임 "하얗게 0%" 로 찍으면 번쩍였다가 서서히 사라집니다.
+ */
+export interface EffectKey {
+  frameId: string;
+  /** 숫자 설정값만 저장합니다 (색/선택 같은 값은 키 없이 그대로) */
+  values: Record<string, number>;
+  /** 이 키에서 다음 키까지의 변화 느낌 */
+  ease: Ease;
+}
+
 /** 비파괴 효과: 원본 픽셀은 그대로 두고 화면/내보내기 때만 적용됩니다. */
 export interface Effect {
   id: string;
@@ -97,6 +109,8 @@ export interface Effect {
   type: string;
   enabled: boolean;
   params: Record<string, EffectParamValue>;
+  /** 효과 값 키프레임 (없거나 비어 있으면 params 값을 모든 프레임에 그대로 사용) */
+  keys?: EffectKey[];
 }
 
 export interface ReferenceData {
