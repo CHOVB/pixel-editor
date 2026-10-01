@@ -3006,3 +3006,10 @@ kbd {
   border-radius: var(--radius);
   white-space: pre-wrap;
 }
+
+/* 남는 공간을 채우는 칸 (글자/입력칸 공통) */
+.btn-row > .grow,
+.shortcut-edit-row > .grow {
+  flex: 1;
+  min-width: 0;
+}

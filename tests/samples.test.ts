@@ -43,3 +43,9 @@ describe('hold rule', () => {
     expect(layerHolds(l)).toBe(false);
   });
 });
+
+describe('sample palettes', () => {
+  it('every sample starts with the default palette', () => {
+    for (const id of SAMPLE_IDS) expect(buildSample(id).palette.length).toBeGreaterThan(8);
+  });
+});

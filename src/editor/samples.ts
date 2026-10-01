@@ -11,6 +11,7 @@
  */
 import { hexToColor } from '../core/color';
 import { createTrack, setKey } from '../core/keyframes';
+import { DEFAULT_PALETTE_ID, getPreset, presetToColors } from '../core/palettes';
 import { createParticleSettings } from '../core/particles';
 import { setPixel } from '../core/pixels';
 import { addFrame, addLayer, createProject, ensureCel, linkCels, uid } from '../core/project';
@@ -58,7 +59,8 @@ const EASE_IN: Ease = { kind: 'easeIn' };
 const EASE_IN_OUT: Ease = { kind: 'easeInOut' };
 
 function base(width: number, height: number, frames: number, duration: number, name: string): Project {
-  const p = createProject(width, height, { name, layerName: tr('layer.defaultName') });
+  // 예제는 기본 팔레트(Endesga 32)로 시작합니다. (예제 그림의 색도 이 팔레트에서 골랐어요)
+  const p = createProject(width, height, { name, layerName: tr('layer.defaultName'), palette: presetToColors(getPreset(DEFAULT_PALETTE_ID)) });
   p.frames[0].duration = duration;
   for (let i = 1; i < frames; i++) addFrame(p, i, duration);
   return p;

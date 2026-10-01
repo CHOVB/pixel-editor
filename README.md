@@ -42,7 +42,7 @@ npm run codex-bridge           # 웹 버전: 에디터와 Codex 를 잇는 브�
 | 명령어 | 하는 일 |
 | --- | --- |
 | `npm run dev` | 개발 서버 실행 (코드 수정 시 자동 반영) |
-| `npm test` | 단위 테스트 (그리기·애니메이션·효과·뼈대·AI 도트 정리·Aseprite·라이선스 등 **80개**) |
+| `npm test` | 단위 테스트 (그리기·애니메이션·효과·뼈대·AI 도트 정리·Aseprite·라이선스 등 **81개**) |
 | `npm run e2e` | 브라우저 자동 점검 (실제 화면을 눌러 보는 테스트 7개) |
 | `npm run typecheck` | TypeScript 타입 오류 검사 |
 | `npm run build` | 웹 배포용 파일을 `dist/` 에 생성 (오프라인 실행/설치 가능한 PWA) |
