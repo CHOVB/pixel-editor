@@ -12,3 +12,4 @@ test-results
 playwright-report
 src-tauri/crates/*/Cargo.lock
 src-tauri/crates/*/target
+promo-out
